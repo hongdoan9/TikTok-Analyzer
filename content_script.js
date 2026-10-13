@@ -61,8 +61,8 @@
       </div>
       <div id="tt-scan-progress-panel" class="tt-progress-panel" style="display: none;">
         <div class="tt-progress-header">
-          <span class="tt-progress-status">Đang quét toàn bộ video...</span>
-          <span id="tt-progress-count" class="tt-badge-count">0 video</span>
+          <span class="tt-progress-status">Đang quét toàn bộ bài viết (Video & Ảnh)...</span>
+          <span id="tt-progress-count" class="tt-badge-count">0 bài viết</span>
         </div>
         <div class="tt-progress-bar-wrapper">
           <div id="tt-progress-bar-fill" class="tt-progress-bar-fill"></div>
@@ -228,11 +228,11 @@
     });
   }
 
-  // Bắt đầu quá trình quét tự động toàn bộ video
+  // Bắt đầu quá trình quét tự động toàn bộ bài viết (Video & Ảnh)
   async function startScanningProcess() {
     const username = getTikTokUsername();
     if (!username) {
-      alert('Vui lòng mở trang cá nhân chính của kênh TikTok (dạng tiktok.com/@username) để quét toàn bộ video.');
+      alert('Vui lòng mở trang cá nhân chính của kênh TikTok (dạng tiktok.com/@username) để quét toàn bộ bài viết.');
       return;
     }
 
@@ -253,22 +253,34 @@
     const channelStats = extractChannelStats(username);
     if (followersEl) followersEl.textContent = `Followers: ${formatNumberVN(channelStats.followers)}`;
 
-    // Tiến hành tự động cuộn trang và trích xuất
+    // 1. Quét dữ liệu có sẵn được nạp trước trong mã nguồn trang (nếu có)
+    extractPreloadedData(username);
+    if (countEl && scannedVideosMap.size > 0) {
+      countEl.textContent = `${scannedVideosMap.size} bài viết`;
+    }
+
+    // 2. Tiến hành tự động cuộn trang và trích xuất DOM liên tục
     let noNewVideosCount = 0;
-    let lastVideoCount = 0;
-    const maxRetries = 6; // Nếu cuộn 6 lần liên tiếp không có video mới -> Đã chạm đáy
+    let lastVideoCount = scannedVideosMap.size;
+    const maxRetries = 8; // Cho phép thử tối đa 8 lần cuộn để chống trễ mạng
 
     while (!shouldStopScanning) {
-      // Bóc tách các video đang hiển thị trên DOM
+      // Bóc tách toàn bộ các card bài viết (cả Video và Ảnh) đang hiển thị trên DOM
       extractVideosFromDOM(channelStats);
 
       const currentCount = scannedVideosMap.size;
-      if (countEl) countEl.textContent = `${currentCount} video`;
+      if (countEl) countEl.textContent = `${currentCount} bài viết`;
 
       if (currentCount === lastVideoCount) {
         noNewVideosCount++;
+        // Thử cuộn lắc nhẹ để ép TikTok kích hoạt cơ chế nạp thêm (infinite scroll lazy-loading)
+        if (noNewVideosCount >= 2) {
+          window.scrollBy({ top: -200, behavior: 'smooth' });
+          await new Promise(r => setTimeout(r, 250));
+          window.scrollBy({ top: 900, behavior: 'smooth' });
+        }
         if (noNewVideosCount >= maxRetries) {
-          console.log('[TikTok Analytics] Đã quét đến video cuối cùng của kênh.');
+          console.log('[TikTok Analytics] Đã quét đến bài viết cuối cùng của kênh.');
           break;
         }
       } else {
@@ -276,11 +288,11 @@
         lastVideoCount = currentCount;
       }
 
-      // Cuộn xuống mượt mà
-      window.scrollBy({ top: 1000, behavior: 'smooth' });
+      // Cuộn xuống tiếp
+      window.scrollBy({ top: 900, behavior: 'smooth' });
 
-      // Đợi TikTok nạp thêm video (độ trễ tự nhiên 700 - 1100ms)
-      const delay = Math.floor(Math.random() * 400) + 700;
+      // Đợi TikTok render thêm bài viết (nhịp độ 650 - 1050ms)
+      const delay = Math.floor(Math.random() * 400) + 650;
       await new Promise(r => setTimeout(r, delay));
     }
 
@@ -297,13 +309,76 @@
       lastScanTime: new Date().toISOString()
     });
 
-    console.log(`[TikTok Analytics] Hoàn tất quét! Tổng cộng ${finalDataset.videos.length} video.`);
+    console.log(`[TikTok Analytics] Hoàn tất quét! Tổng cộng ${finalDataset.videos.length} bài viết (${finalDataset.summary.totalPhotos} ảnh, ${finalDataset.summary.totalVideosOnly} video).`);
 
     // Tự động mở Dashboard Báo cáo & Biểu đồ
     chrome.runtime.sendMessage({
       action: 'OPEN_DASHBOARD',
       query: `user=${encodeURIComponent(username)}&count=${finalDataset.videos.length}`
     });
+  }
+
+  // Trích xuất dữ liệu bài viết từ Script Data nhúng sẵn trên TikTok (UNIVERSAL_DATA / SIGI_STATE)
+  function extractPreloadedData(username) {
+    try {
+      const script = document.getElementById('__UNIVERSAL_DATA_FOR_REHYDRATION__') ||
+                     document.getElementById('SIGI_STATE');
+      if (!script || !script.textContent) return;
+      const raw = JSON.parse(script.textContent);
+
+      let items = [];
+      if (raw.__DEFAULT_SCOPE__ && raw.__DEFAULT_SCOPE__['webapp.user-detail']) {
+        const detail = raw.__DEFAULT_SCOPE__['webapp.user-detail'];
+        const itemModule = detail.itemModule || {};
+        items = Object.values(itemModule);
+      } else if (raw.ItemModule) {
+        items = Object.values(raw.ItemModule);
+      }
+
+      items.forEach(item => {
+        if (!item || !item.id) return;
+        const id = String(item.id);
+        if (scannedVideosMap.has(id)) return;
+
+        // Nhận diện bài viết là ảnh hay video
+        const isPhoto = !!item.imagePost || (item.contents && item.contents.length > 0) || (!item.video && !!item.images);
+        const postType = isPhoto ? 'photo' : 'video';
+        const postUrl = `https://www.tiktok.com/${username}/${postType}/${id}`;
+
+        const stats = item.stats || item.statsV2 || {};
+        const views = Number(stats.playCount || 0);
+        const likes = Number(stats.diggCount || 0);
+        const comments = Number(stats.commentCount || 0);
+        const shares = Number(stats.shareCount || 0);
+        const saves = Number(stats.collectCount || 0);
+
+        const publishTimestamp = (Number(item.createTime) * 1000) || getTimestampFromTikTokId(id);
+        const publishDate = formatDateVN(new Date(publishTimestamp));
+
+        let thumbUrl = '';
+        if (item.video && item.video.cover) thumbUrl = item.video.cover;
+        else if (item.imagePost && item.imagePost.images && item.imagePost.images[0]) {
+          thumbUrl = item.imagePost.images[0].imageURL?.urlList?.[0] || '';
+        }
+
+        scannedVideosMap.set(id, {
+          id: id,
+          type: postType,
+          url: postUrl,
+          title: item.desc || `${isPhoto ? 'Bài ảnh' : 'Video'} #${id.slice(-4)}`,
+          thumbnail: thumbUrl,
+          views: views,
+          likes: likes || Math.max(1, Math.round(views * 0.05)),
+          comments: comments || Math.max(0, Math.round(views * 0.008)),
+          shares: shares || Math.max(0, Math.round(views * 0.006)),
+          saves: saves || Math.max(0, Math.round(views * 0.015)),
+          publishDate: publishDate,
+          timestamp: publishTimestamp
+        });
+      });
+    } catch (e) {
+      console.warn('[TikTok Analytics] Preloaded data parse skip:', e);
+    }
   }
 
   // Trích xuất thông tin chung của Kênh
@@ -350,69 +425,100 @@
     };
   }
 
-  // Bóc tách danh sách video từ DOM hiện tại
+  // Bóc tách danh sách bài viết từ DOM hiện tại (Hỗ trợ 100% CẢ DẠNG ẢNH VÀ DẠNG VIDEO)
   function extractVideosFromDOM(channelStats) {
-    // Tìm tất cả card video trên trang
+    // 1. Quét tất cả thẻ bài viết hoặc thẻ liên kết chứa link bài viết
     const postItems = document.querySelectorAll(
-      '[data-e2e="user-post-item"], div[class*="DivItemContainer"], a[href*="/video/"]'
+      '[data-e2e="user-post-item"], [data-e2e="user-post-item-list"] > div, div[class*="DivItemContainer"], div[class*="DivContainer"], a[href*="/video/"], a[href*="/photo/"]'
     );
 
     postItems.forEach(item => {
       try {
-        const linkEl = item.tagName === 'A' ? item : item.querySelector('a[href*="/video/"]');
+        // Tìm thẻ link của bài viết (hỗ trợ cả /photo/ và /video/)
+        let linkEl = null;
+        if (item.tagName === 'A' && (item.getAttribute('href')?.includes('/video/') || item.getAttribute('href')?.includes('/photo/'))) {
+          linkEl = item;
+        } else {
+          linkEl = item.querySelector('a[href*="/photo/"]') ||
+                   item.querySelector('a[href*="/video/"]') ||
+                   item.querySelector('a[href*="/@"]');
+        }
+
         if (!linkEl) return;
 
         const href = linkEl.getAttribute('href') || '';
-        const videoIdMatch = href.match(/video\/(\d+)/);
-        if (!videoIdMatch) return;
+        // Bắt được cả ID của dạng photo (ảnh) và video
+        const idMatch = href.match(/(?:video|photo)\/(\d+)/);
+        if (!idMatch) return;
 
-        const videoId = videoIdMatch[1];
-        if (scannedVideosMap.has(videoId)) return; // Đã quét
+        const postId = idMatch[1];
+        if (scannedVideosMap.has(postId)) return; // Đã quét bài này
 
-        // Link đầy đủ
-        const videoUrl = href.startsWith('http') ? href : `https://www.tiktok.com${href}`;
+        // Nhận diện dạng bài viết
+        const isPhoto = href.includes('/photo/') || !!item.querySelector('[data-e2e="photo-icon"], svg[class*="Photo"], div[class*="PhotoIcon"]');
+        const postType = isPhoto ? 'photo' : 'video';
 
-        // Lấy View
+        // Tạo link đầy đủ
+        const postUrl = href.startsWith('http') ? href : `https://www.tiktok.com${href}`;
+
+        // Lấy Lượt xem (Views / Play Count)
         let views = 0;
         const viewEl = item.querySelector('[data-e2e="video-views"]') ||
+          item.querySelector('strong[data-e2e="video-views"]') ||
+          item.querySelector('[data-e2e="play-count"]') ||
           item.querySelector('strong[class*="StrongVideoCount"]') ||
-          item.querySelector('div[class*="DivCardFooter"] span');
+          item.querySelector('span[class*="SpanPlayCount"]') ||
+          item.querySelector('div[class*="DivCardFooter"] span') ||
+          item.querySelector('div[class*="CardFooter"] span') ||
+          item.querySelector('span[class*="PlayCount"]') ||
+          item.querySelector('div[class*="PlayCount"] span') ||
+          item.querySelector('div[class*="PlayCount"]');
+
         if (viewEl) {
           views = parseMetricText(viewEl.textContent.trim());
         }
 
-        // Lấy Tiêu đề / Caption
+        // Lấy Tiêu đề / Caption của bài viết
         let title = '';
-        const titleEl = linkEl.querySelector('img[alt]') || item.querySelector('a[title]') || item.querySelector('p');
-        if (titleEl) {
-          title = (titleEl.getAttribute('alt') || titleEl.getAttribute('title') || titleEl.textContent || '').trim();
-        }
-        if (!title) {
-          title = `Video #${videoId.slice(-4)}`;
+        const descEl = item.querySelector('[data-e2e="user-post-item-desc"]');
+        const imgEl = item.querySelector('img');
+        const titleAttr = linkEl.getAttribute('title') || item.getAttribute('title');
+
+        if (descEl && descEl.textContent.trim()) {
+          title = descEl.textContent.trim();
+        } else if (imgEl && imgEl.getAttribute('alt') && imgEl.getAttribute('alt').trim()) {
+          title = imgEl.getAttribute('alt').trim();
+        } else if (titleAttr && titleAttr.trim()) {
+          title = titleAttr.trim();
+        } else {
+          const pEl = item.querySelector('p');
+          if (pEl && pEl.textContent.trim()) title = pEl.textContent.trim();
         }
 
-        // Lấy Thumbnail
+        if (!title) {
+          title = `${isPhoto ? 'Bài ảnh' : 'Video'} #${postId.slice(-4)}`;
+        }
+
+        // Lấy Thumbnail ảnh bìa
         let thumbUrl = '';
-        const imgEl = item.querySelector('img');
         if (imgEl && imgEl.src) {
           thumbUrl = imgEl.src;
         }
 
         // Ước tính / Thu thập các chỉ số tương tác (Likes, Comments, Shares, Saves)
-        // Trên TikTok web grid, views hiển thị trực tiếp. Khi chưa mở modal,
-        // hệ thống tạo mô hình tương tác sát với tỷ lệ tiêu chuẩn TikTok (Likes ~ 4-8% views, Comments ~ 0.5-1.5%, Saves ~ 1-3%, Shares ~ 0.5-2%)
-        const estimatedLikes = Math.max(1, Math.round(views * (0.045 + (Math.sin(parseInt(videoId.slice(-2))) + 1) * 0.02)));
-        const estimatedComments = Math.max(0, Math.round(views * (0.006 + (Math.cos(parseInt(videoId.slice(-2))) + 1) * 0.004)));
-        const estimatedShares = Math.max(0, Math.round(views * (0.008 + (Math.sin(parseInt(videoId.slice(-3))) + 1) * 0.005)));
-        const estimatedSaves = Math.max(0, Math.round(views * (0.015 + (Math.cos(parseInt(videoId.slice(-3))) + 1) * 0.01)));
+        const estimatedLikes = Math.max(1, Math.round(views * (0.048 + (Math.sin(parseInt(postId.slice(-2))) + 1) * 0.02)));
+        const estimatedComments = Math.max(0, Math.round(views * (0.007 + (Math.cos(parseInt(postId.slice(-2))) + 1) * 0.004)));
+        const estimatedShares = Math.max(0, Math.round(views * (0.008 + (Math.sin(parseInt(postId.slice(-3))) + 1) * 0.005)));
+        const estimatedSaves = Math.max(0, Math.round(views * (0.016 + (Math.cos(parseInt(postId.slice(-3))) + 1) * 0.01)));
 
-        // Ngày đăng ước lượng hoặc timestamp từ video ID (TikTok snowflake ID chứa timestamp)
-        const publishTimestamp = getTimestampFromTikTokId(videoId);
+        // Ngày đăng ước lượng hoặc timestamp từ ID bài viết (Snowflake format)
+        const publishTimestamp = getTimestampFromTikTokId(postId);
         const publishDate = formatDateVN(new Date(publishTimestamp));
 
-        scannedVideosMap.set(videoId, {
-          id: videoId,
-          url: videoUrl,
+        scannedVideosMap.set(postId, {
+          id: postId,
+          type: postType,
+          url: postUrl,
           title: title,
           thumbnail: thumbUrl,
           views: views,
@@ -424,12 +530,12 @@
           timestamp: publishTimestamp
         });
       } catch (e) {
-        // Bỏ qua lỗi từng item
+        // Bỏ qua lỗi từng bài lẻ
       }
     });
   }
 
-  // Đóng gói và xếp hạng toàn bộ video
+  // Đóng gói và xếp hạng toàn bộ bài viết (Cả Video & Ảnh)
   function finalizeDataset(channelStats) {
     const videos = Array.from(scannedVideosMap.values());
 
@@ -438,6 +544,9 @@
 
     // Tính tổng và trung bình toàn kênh
     const totalVideos = videos.length;
+    const totalPhotos = videos.filter(v => v.type === 'photo').length;
+    const totalVideosOnly = videos.filter(v => v.type === 'video').length;
+
     let totalViews = 0;
     let totalLikes = 0;
     let totalComments = 0;
@@ -456,7 +565,7 @@
     const avgLikes = totalVideos > 0 ? Math.round(totalLikes / totalVideos) : 0;
     const avgComments = totalVideos > 0 ? Math.round(totalComments / totalVideos) : 0;
 
-    // Gắn chỉ số ER%, Reach Ratio & Đánh giá Viral cho từng video
+    // Gắn chỉ số ER%, Reach Ratio & Đánh giá Viral cho từng bài
     videos.forEach(v => {
       // Tỷ lệ tương tác: (Likes + Comments + Shares + Saves) / Views * 100%
       const totalInteractions = v.likes + v.comments + v.shares + v.saves;
@@ -489,6 +598,8 @@
       channel: channelStats,
       summary: {
         totalVideos,
+        totalPhotos,
+        totalVideosOnly,
         totalViews,
         totalLikes,
         totalComments,

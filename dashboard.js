@@ -112,6 +112,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 5 Thẻ tóm tắt
     statTotalVideos.textContent = formatNumber(summary.totalVideos || videos.length);
+    const subVideoEl = statTotalVideos.parentElement?.querySelector('.stat-sub');
+    if (subVideoEl) {
+      if (summary.totalPhotos !== undefined && summary.totalPhotos > 0) {
+        subVideoEl.textContent = `${summary.totalVideosOnly || 0} video • ${summary.totalPhotos} bài ảnh`;
+      } else {
+        subVideoEl.textContent = '100% bài viết trên kênh';
+      }
+    }
     statTotalViews.textContent = formatNumber(summary.totalViews || 0);
     statAvgViews.textContent = formatNumber(summary.avgViews || 0);
     statAvgEr.textContent = `${summary.avgEr || 0}%`;
@@ -419,11 +427,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       else if (rank === 2) { medal = '🥈 Top 2'; rankClass = 'rank-2'; }
       else if (rank === 3) { medal = '🥉 Top 3'; rankClass = 'rank-3'; }
 
+      const isPhoto = v.type === 'photo';
+      const typeBadge = isPhoto ? '<span class="type-pill type-photo">📷 Bài ảnh</span>' : '<span class="type-pill type-video">🎬 Video</span>';
+
       const card = document.createElement('div');
       card.className = 'leader-card';
       card.innerHTML = `
         <div class="leader-top-badge">
-          <span class="rank-badge ${rankClass}">${medal}</span>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span class="rank-badge ${rankClass}">${medal}</span>
+            ${typeBadge}
+          </div>
           <span class="viral-tag ${v.viralClass || 'normal'}">${v.viralLabel || 'Bình thường'}</span>
         </div>
         <h4 class="leader-card-title" title="${escapeHtml(v.title)}">${escapeHtml(v.title)}</h4>
@@ -448,7 +462,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div class="leader-card-footer">
           <span class="card-date">${v.publishDate ? v.publishDate.split(' ')[0] : 'TikTok'}</span>
           <a href="${v.url}" target="_blank" rel="noopener noreferrer" class="btn-card-link">
-            <span>Mở video</span>
+            <span>${isPhoto ? 'Xem bài ảnh' : 'Mở video'}</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/>
             </svg>
@@ -532,12 +546,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     filtered.forEach((v, idx) => {
+      const isPhoto = v.type === 'photo';
+      const typeBadge = isPhoto ? '<span class="type-mini-pill photo">📷 Ảnh</span>' : '<span class="type-mini-pill video">🎬 Video</span>';
+
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${idx + 1}</td>
         <td style="max-width: 320px; font-weight: 500; color: #fff;">
-          <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(v.title)}">
-            ${escapeHtml(v.title)}
+          <div style="display: flex; align-items: center; gap: 8px;">
+            ${typeBadge}
+            <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;" title="${escapeHtml(v.title)}">
+              ${escapeHtml(v.title)}
+            </div>
           </div>
         </td>
         <td>${v.publishDate || '--'}</td>

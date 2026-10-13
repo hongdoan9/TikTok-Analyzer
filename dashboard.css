@@ -832,3 +832,41 @@ body {
   from { transform: translateY(100%); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
+
+/* Post Type Badges (Photo vs Video) */
+.type-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.type-pill.type-photo {
+  background: rgba(168, 85, 247, 0.18);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+}
+.type-pill.type-video {
+  background: rgba(37, 244, 238, 0.15);
+  color: #25F4EE;
+  border: 1px solid rgba(37, 244, 238, 0.3);
+}
+.type-mini-pill {
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 2px 6px;
+  display: inline-block;
+}
+.type-mini-pill.photo {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+.type-mini-pill.video {
+  background: rgba(37, 244, 238, 0.15);
+  color: #25F4EE;
+  border: 1px solid rgba(37, 244, 238, 0.25);
+}
