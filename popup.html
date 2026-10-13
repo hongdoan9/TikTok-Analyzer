@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Theo dõi tổng quan TikTok</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-wrapper">
+    <!-- Header -->
+    <header class="popup-header">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M19.589 6.686a4.793 4.793 0 0 1-3.77-4.245V2h-3.445v13.672a2.896 2.896 0 0 1-2.887 2.894 2.895 2.895 0 0 1-2.895-2.894 2.895 2.895 0 0 1 2.895-2.894c.306 0 .598.05.874.137V9.41a6.34 6.34 0 0 0-.874-.06 6.34 6.34 0 0 0-6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 0 0 0 6.34-6.34V8.756a8.214 8.214 0 0 0 4.762 1.512V6.823a4.805 4.805 0 0 1-1-.137z" fill="#FE2C55"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>Theo dõi TikTok</h1>
+          <span class="version">v1.0.0</span>
+        </div>
+      </div>
+      <button id="btn-settings-icon" class="icon-btn" title="Cài đặt Google Sheet">⚙️</button>
+    </header>
+
+    <!-- Main Content -->
+    <main class="popup-body">
+      <!-- Status Card -->
+      <div id="status-card" class="status-card loading">
+        <div class="status-indicator"></div>
+        <div class="status-info">
+          <span class="status-label">Trạng thái trang:</span>
+          <span id="current-channel" class="status-value">Đang kiểm tra tab...</span>
+        </div>
+      </div>
+
+      <!-- Actions Area -->
+      <div class="action-buttons">
+        <button id="btn-start-scan" class="btn btn-primary" disabled>
+          <span class="btn-icon">⚡</span>
+          <span>Bắt đầu quét kênh</span>
+        </button>
+
+        <button id="btn-open-dashboard" class="btn btn-secondary">
+          <span class="btn-icon">📊</span>
+          <span>Mở Dashboard Báo Cáo</span>
+        </button>
+      </div>
+
+      <!-- Quick Info / Last Scan -->
+      <div class="quick-stats">
+        <div class="stat-item">
+          <span class="stat-title">Lần quét gần nhất</span>
+          <span id="last-scan-time" class="stat-num">Chưa có</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-title">Kênh đã lưu</span>
+          <span id="saved-channel" class="stat-num">--</span>
+        </div>
+      </div>
+
+      <!-- Google Sheets Connection Status -->
+      <div class="sheets-badge-container">
+        <span class="sheets-label">Google Sheet:</span>
+        <span id="sheets-status" class="sheets-badge unconfigured">Chưa cài Webhook</span>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="popup-footer">
+      <span>Serverless • Manifest V3 • Auto Google Sheet</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

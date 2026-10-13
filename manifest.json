@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "Theo dõi tổng quan TikTok",
+  "short_name": "TikTok Analytics",
+  "version": "1.0.0",
+  "description": "Tiện ích quét toàn bộ video kênh TikTok, đo lường traffic, phát hiện video viral, bảng vàng top 10 và đồng bộ tự động lên Google Sheet.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Theo dõi tổng quan TikTok"
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "*://*.tiktok.com/*",
+    "*://script.google.com/*",
+    "*://script.googleusercontent.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.tiktok.com/@*",
+        "*://*.tiktok.com/*"
+      ],
+      "js": ["content_script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "dashboard.html",
+        "dashboard.js",
+        "dashboard.css",
+        "icons/*"
+      ],
+      "matches": ["*://*.tiktok.com/*"]
+    }
+  ]
+}
