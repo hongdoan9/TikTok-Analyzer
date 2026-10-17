@@ -313,6 +313,38 @@
       await new Promise(r => setTimeout(r, delay));
     }
 
+    // 3. Tự động đồng bộ chuẩn xác tiêu đề & hashtag cho các bài chưa có hashtag hoặc bị lỗi text rác (ví dụ bài ghim)
+    const needsEnrichment = Array.from(scannedVideosMap.values()).filter(v => {
+      const t = v.title || '';
+      return !t.includes('#') || /^(\.\.\.|…)/.test(t) || /người\s*khác/i.test(t) || t.length < 15;
+    });
+
+    if (needsEnrichment.length > 0) {
+      if (statusEl) statusEl.textContent = `Đang đồng bộ tiêu đề & hashtag chuẩn (${needsEnrichment.length} bài)...`;
+      for (const v of needsEnrichment) {
+        if (shouldStopScanning) break;
+        try {
+          const res = await fetch(v.url, { credentials: 'omit' });
+          if (res.ok) {
+            const html = await res.text();
+            // Bóc tách từ meta description của trang bài viết TikTok
+            const metaMatch = html.match(/<meta\s+(?:name|property)=["'](?:description|og:description)["']\s+content=["']([^"']+)["']/i) ||
+                              html.match(/content=["']([^"']+)["']\s+(?:name|property)=["'](?:description|og:description)["']/i);
+            if (metaMatch && metaMatch[1]) {
+              let cleanDesc = metaMatch[1].replace(/^TikTok\s+(?:video|photo)\s+from\s+[^:]+:\s*/i, '').trim();
+              if (cleanDesc && cleanDesc.length > v.title.length) {
+                v.title = cleanDesc;
+                const newTags = (cleanDesc.match(/#[\p{L}\p{N}_]+/gu) || []).map(t => t.trim());
+                v.searchQueries = Array.from(new Set([...v.searchQueries, ...newTags]));
+              }
+            }
+          }
+        } catch (err) {
+          // Bỏ qua lỗi mạng từng bài lẻ
+        }
+      }
+    }
+
     // Hoàn tất quét
     isScanning = false;
     if (progressPanel) progressPanel.style.display = 'none';
@@ -343,14 +375,25 @@
       if (!script || !script.textContent) return;
       const raw = JSON.parse(script.textContent);
 
-      let items = [];
-      if (raw.__DEFAULT_SCOPE__ && raw.__DEFAULT_SCOPE__['webapp.user-detail']) {
-        const detail = raw.__DEFAULT_SCOPE__['webapp.user-detail'];
-        const itemModule = detail.itemModule || {};
-        items = Object.values(itemModule);
-      } else if (raw.ItemModule) {
-        items = Object.values(raw.ItemModule);
+      // Quét đệ quy toàn bộ JSON để tìm tất cả bài viết (kể cả bài đã ghim trong pinnedItemModule)
+      function collectRawItems(obj, map = new Map()) {
+        if (!obj || typeof obj !== 'object') return map;
+        if (obj.id && (obj.desc !== undefined || obj.stats || obj.statsV2 || obj.imagePost || obj.video)) {
+          const idStr = String(obj.id);
+          if (!map.has(idStr) || (!map.get(idStr).desc && obj.desc)) {
+            map.set(idStr, obj);
+          }
+        }
+        for (const k of Object.keys(obj)) {
+          try {
+            collectRawItems(obj[k], map);
+          } catch (e) {}
+        }
+        return map;
       }
+
+      const itemMap = collectRawItems(raw);
+      const items = Array.from(itemMap.values());
 
       items.forEach(item => {
         if (!item || !item.id) return;
@@ -370,11 +413,20 @@
         const saves = Number(stats.collectCount || 0);
         const reposts = Number(stats.repostCount || (shares > 0 ? Math.round(shares * 0.45) : 0));
 
+        // Bóc tách tiêu đề & nội dung chuẩn có kèm hashtag
+        const rawCaption = item.desc ||
+                           item.imagePost?.title ||
+                           item.imagePost?.desc ||
+                           item.contents?.[0]?.desc ||
+                           item.shareMeta?.desc ||
+                           item.shareMeta?.title ||
+                           '';
+
         // Bóc tách từ khóa gợi ý và hashtag SEO
         const suggestedWords = Array.isArray(item.suggestedWords) ? item.suggestedWords : [];
         const textExtra = Array.isArray(item.textExtra) ? item.textExtra : [];
         const extraTags = textExtra.filter(t => t.hashtagName).map(t => '#' + t.hashtagName);
-        const descTags = (item.desc || '').match(/#[\p{L}\p{N}_]+/gu) || [];
+        const descTags = (rawCaption || '').match(/#[\p{L}\p{N}_]+/gu) || [];
         const searchQueries = Array.from(new Set([...suggestedWords, ...extraTags, ...descTags].filter(Boolean)));
 
         const publishTimestamp = (Number(item.createTime) * 1000) || getTimestampFromTikTokId(id);
@@ -390,7 +442,7 @@
           id: id,
           type: postType,
           url: postUrl,
-          title: item.desc || `${isPhoto ? 'Bài ảnh' : 'Video'} #${id.slice(-4)}`,
+          title: rawCaption || `${isPhoto ? 'Bài ảnh' : 'Video'} #${id.slice(-4)}`,
           thumbnail: thumbUrl,
           views: views,
           likes: likes || Math.max(1, Math.round(views * 0.05)),
@@ -535,23 +587,8 @@
           }
         }
 
-        // Lấy Tiêu đề / Caption của bài viết
-        let title = '';
-        const descEl = item.querySelector('[data-e2e="user-post-item-desc"]');
-        const imgEl = item.querySelector('img');
-        const titleAttr = linkEl.getAttribute('title') || item.getAttribute('title');
-
-        if (descEl && descEl.textContent.trim()) {
-          title = descEl.textContent.trim();
-        } else if (imgEl && imgEl.getAttribute('alt') && imgEl.getAttribute('alt').trim()) {
-          title = imgEl.getAttribute('alt').trim();
-        } else if (titleAttr && titleAttr.trim()) {
-          title = titleAttr.trim();
-        } else {
-          const pEl = item.querySelector('p');
-          if (pEl && pEl.textContent.trim()) title = pEl.textContent.trim();
-        }
-
+        // Lấy Tiêu đề / Caption tối ưu của bài viết (loại bỏ text tag bạn bè '... và x người khác', tên nhạc ngắn)
+        let title = extractBestCaptionFromDOM(card, linkEl);
         if (!title) {
           title = `${isPhoto ? 'Bài ảnh' : 'Video'} #${postId.slice(-4)}`;
         }
@@ -575,8 +612,13 @@
               existing.reposts = Math.max(existing.reposts || 0, Math.round(views * 0.004));
             }
             if (!existing.thumbnail && thumbUrl) existing.thumbnail = thumbUrl;
-            if (title && (existing.title.startsWith('Video #') || existing.title.startsWith('Bài ảnh #'))) {
+            // Cập nhật tiêu đề nếu tiêu đề mới có chứa hashtag hoặc tiêu đề cũ là text rác / placeholder
+            const oldIsBad = !existing.title || existing.title.startsWith('Video #') || existing.title.startsWith('Bài ảnh #') || /^(\.\.\.|…)/.test(existing.title) || /người\s*khác/i.test(existing.title) || (existing.title.length < 15 && !existing.title.includes('#'));
+            const newIsGood = title && (title.includes('#') || title.length >= 20);
+            if (newIsGood && oldIsBad) {
               existing.title = title;
+              const newTags = (title.match(/#[\p{L}\p{N}_]+/gu) || []).map(t => t.trim());
+              existing.searchQueries = Array.from(new Set([...existing.searchQueries, ...newTags]));
             }
           }
           return;
@@ -619,6 +661,102 @@
         // Bỏ qua lỗi từng bài lẻ
       }
     });
+  }
+
+  // Trích xuất tiêu đề & caption chuẩn nhất từ DOM của Card, lọc bỏ text rác (tag bạn bè, nhạc ngắn)
+  function extractBestCaptionFromDOM(card, linkEl) {
+    const candidates = [];
+
+    // 1. Thu thập từ thuộc tính title/aria-label của link và card
+    if (linkEl) {
+      const t = linkEl.getAttribute('title');
+      if (t) candidates.push(t);
+      const aria = linkEl.getAttribute('aria-label');
+      if (aria) candidates.push(aria);
+    }
+    if (card) {
+      const t = card.getAttribute('title');
+      if (t) candidates.push(t);
+      const aria = card.getAttribute('aria-label');
+      if (aria) candidates.push(aria);
+    }
+
+    // 2. Thu thập từ các container mô tả thường gặp trên TikTok
+    const descSelectors = [
+      '[data-e2e="user-post-item-desc"]',
+      'div[class*="DivDesContainer"]',
+      'div[class*="DesContainer"]',
+      'div[class*="DivTextContainer"]',
+      'div[class*="TextContainer"]',
+      'div[class*="Description"]',
+      'div[class*="CardFooter"] ~ div',
+      'p[class*="Paragraph"]',
+      'span[class*="SpanText"]'
+    ];
+    for (const sel of descSelectors) {
+      const el = card ? card.querySelector(sel) : null;
+      if (el && el.textContent.trim()) {
+        candidates.push(el.textContent.trim());
+      }
+    }
+
+    // 3. Quét tất cả thẻ ảnh <img> trong card
+    const imgs = card ? card.querySelectorAll('img') : [];
+    for (const img of imgs) {
+      const alt = img.getAttribute('alt');
+      if (alt && alt.trim()) {
+        candidates.push(alt.trim());
+      }
+    }
+
+    // 4. Quét các thẻ có chứa hashtag '#' trong card
+    const hashtagEls = card ? card.querySelectorAll('a, p, span, div') : [];
+    for (const el of hashtagEls) {
+      const txt = el.textContent.trim();
+      if (txt.includes('#') && txt.length >= 10 && txt.length <= 400) {
+        candidates.push(txt);
+      }
+    }
+
+    // 5. Đánh giá và lọc ra tiêu đề chuẩn nhất (có hashtag, dài, không phải text rác)
+    let best = '';
+    let maxScore = -9999;
+
+    for (let c of candidates) {
+      c = c.replace(/\s+/g, ' ').trim();
+      if (!c) continue;
+
+      let score = 0;
+
+      // Phạt rất nặng text gắn thẻ bạn bè (ví dụ: '..., ~ và 4 người khác' hoặc 'và ... người khác')
+      if (/^(\.\.\.|…)/.test(c) || /người\s*khác/i.test(c)) {
+        score -= 1000;
+      }
+      // Phạt text avatar/icon/poster
+      if (/^(avatar|icon|photo|video|logo)\b/i.test(c)) {
+        score -= 500;
+      }
+      // Phạt text quá ngắn không có hashtag (như 'đéo sao', 'Nhu Ngoc.')
+      if (c.length < 15 && !c.includes('#')) {
+        score -= 200;
+      }
+
+      // Ưu tiên cao nhất cho chuỗi có hashtag '#' (đặc trưng của caption TikTok)
+      if (c.includes('#')) {
+        score += 300;
+      }
+      // Điểm cộng theo độ dài chuỗi (tối đa 150 điểm)
+      if (c.length >= 20) {
+        score += Math.min(150, c.length);
+      }
+
+      if (score > maxScore) {
+        maxScore = score;
+        best = c;
+      }
+    }
+
+    return best;
   }
 
   // Đóng gói và xếp hạng toàn bộ bài viết (Cả Video & Ảnh)
