@@ -31,17 +31,18 @@ function doPost(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 15 Cột dữ liệu tiêu chuẩn theo thiết kế
+    // 16 Cột dữ liệu tiêu chuẩn theo thiết kế
     var headers = [
       "Thời điểm quét",
       "Kênh TikTok",
       "Tổng Follower",
-      "ID Video",
+      "ID Bài viết",
       "Tiêu đề bài viết",
       "Ngày đăng",
       "Lượt xem (Views)",
       "Lượt tim (Likes)",
       "Lượt bình luận",
+      "Lượt đăng lại",
       "Lượt chia sẻ",
       "Lượt lưu",
       "Tỷ lệ tương tác (%)",

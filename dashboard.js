@@ -8,8 +8,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   let currentDataset = null;
   let chartFilter = '30'; // '30', '60', 'all', 'viral'
   let chartZoomPercent = 100;
-  let currentLeaderboardTab = 'viral';
+  let currentLeaderboardTab = 'views'; // Mặc định hiển thị Top 10 Lượt Xem
   let hoveredPoint = null;
+
+  // Trạng thái bộ lọc ngày
+  let dateFilterPreset = 'all'; // 'all', '7d', '30d', '90d', 'this-month'
+  let dateFilterFrom = '';
+  let dateFilterTo = '';
 
   // DOM Elements
   const channelAvatar = document.getElementById('channel-avatar');
@@ -36,9 +41,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Leaderboard & Tables
   const leaderboardGrid = document.getElementById('leaderboard-grid');
-  const keywordsTableBody = document.getElementById('keywords-table-body');
+  const searchQueriesTableBody = document.getElementById('search-queries-table-body');
+  const queriesTotalCount = document.getElementById('queries-total-count');
   const fullVideosTableBody = document.getElementById('full-videos-table-body');
   const tableSearchInput = document.getElementById('table-search-input');
+
+  // Date Filter Elements
+  const filteredVideosCount = document.getElementById('filtered-videos-count');
+  const totalVideosCount = document.getElementById('total-videos-count');
+  const activeFilterBadge = document.getElementById('active-filter-badge');
+  const dateFromInput = document.getElementById('date-from');
+  const dateToInput = document.getElementById('date-to');
+  const btnClearDate = document.getElementById('btn-clear-date');
 
   // Modals & Buttons
   const btnSyncSheets = document.getElementById('btn-sync-sheets');
@@ -129,14 +143,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Biểu đồ
     renderFluctuationChart();
 
-    // Bảng vàng Top 10
+    // Bảng vàng Top 10 (Mặc định tab views)
     renderLeaderboard(currentLeaderboardTab);
 
-    // Phân tích từ khóa tiêu đề
-    renderContentInsights(videos);
+    // Bảng tổng hợp từ khóa tìm kiếm & xu hướng SEO
+    renderSearchQueriesTable(videos);
 
-    // Bảng danh sách chi tiết
-    renderFullTable(videos);
+    // Bảng danh sách chi tiết (kèm bộ lọc ngày và tìm kiếm)
+    applyTableFilters();
   }
 
   // 4. BIỂU ĐỒ BIẾN ĐỘNG (INTERACTIVE CANVAS ENGINE)
@@ -183,7 +197,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    const padding = { top: 30, right: 30, bottom: 45, left: 65 };
+    const padding = { top: 48, right: 30, bottom: 45, left: 65 };
     const chartW = w - padding.left - padding.right;
     const chartH = h - padding.top - padding.bottom;
 
@@ -354,7 +368,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   function showChartTooltip(point, rect) {
     const v = point.video;
     chartTooltip.style.display = 'block';
-    chartTooltip.style.left = `${point.x}px`;
+
+    // Tự động lật tooltip xuống dưới nếu điểm dữ liệu nằm gần mép trên của biểu đồ (chống lỗi cắt cụt)
+    if (point.y < 140) {
+      chartTooltip.style.transform = 'translate(-50%, 15px)';
+    } else {
+      chartTooltip.style.transform = 'translate(-50%, -110%)';
+    }
+
+    // Giữ tooltip không bao giờ tràn ra ngoài biên trái/phải
+    let posX = point.x;
+    const minX = 140;
+    const maxX = rect.width - 140;
+    if (posX < minX) posX = minX;
+    if (posX > maxX) posX = maxX;
+
+    chartTooltip.style.left = `${posX}px`;
     chartTooltip.style.top = `${point.y}px`;
 
     chartTooltip.innerHTML = `
@@ -372,8 +401,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         <span class="tooltip-val">${formatNumber(v.comments)}</span>
       </div>
       <div class="tooltip-row">
+        <span>🔁 Đăng lại:</span>
+        <span class="tooltip-val" style="color: #a855f7">${formatNumber(v.reposts || 0)}</span>
+      </div>
+      <div class="tooltip-row">
         <span>🔖 Lượt lưu:</span>
-        <span class="tooltip-val">${formatNumber(v.saves)}</span>
+        <span class="tooltip-val" style="color: #f59e0b">${formatNumber(v.saves)}</span>
       </div>
       <div class="tooltip-row">
         <span>↗️ Chia sẻ:</span>
@@ -385,7 +418,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       </div>
       <div class="tooltip-row">
         <span>Đánh giá:</span>
-        <span style="font-weight: 700; color: ${v.viralClass === 'super-viral' ? '#FE2C55' : '#25F4EE'}">${v.viralLabel}</span>
+        <span style="font-weight: 700; color: ${v.viralClass === 'super-viral' ? '#FE2C55' : (v.viralClass === 'trending' ? '#f59e0b' : '#25F4EE')}">${v.viralLabel}</span>
       </div>
     `;
   }
@@ -401,18 +434,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     let list = [...currentDataset.videos];
 
     // Sắp xếp theo tiêu chí được chọn
-    if (tab === 'viral') {
-      list.sort((a, b) => b.viralScore - a.viralScore);
-    } else if (tab === 'views') {
+    if (tab === 'views') {
       list.sort((a, b) => b.views - a.views);
-    } else if (tab === 'likes') {
-      list.sort((a, b) => b.likes - a.likes);
     } else if (tab === 'saves') {
       list.sort((a, b) => b.saves - a.saves);
     } else if (tab === 'shares') {
       list.sort((a, b) => b.shares - a.shares);
+    } else if (tab === 'reposts') {
+      list.sort((a, b) => (b.reposts || 0) - (a.reposts || 0));
     } else if (tab === 'comments') {
       list.sort((a, b) => b.comments - a.comments);
+    } else if (tab === 'likes') {
+      list.sort((a, b) => b.likes - a.likes);
+    } else if (tab === 'viral') {
+      list.sort((a, b) => b.viralScore - a.viralScore);
     }
 
     // LẤY TỐI ĐA 10 VIDEO THEO YÊU CẦU
@@ -451,12 +486,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             <span class="metric-cell-val" style="color: #FE2C55">${formatNumber(v.likes)}</span>
           </div>
           <div class="metric-cell">
+            <span class="metric-cell-label">Bình luận</span>
+            <span class="metric-cell-val" style="color: #38bdf8">${formatNumber(v.comments)}</span>
+          </div>
+          <div class="metric-cell">
+            <span class="metric-cell-label">Đăng lại</span>
+            <span class="metric-cell-val" style="color: #a855f7">${formatNumber(v.reposts || 0)}</span>
+          </div>
+          <div class="metric-cell">
             <span class="metric-cell-label">Lượt Lưu</span>
             <span class="metric-cell-val" style="color: #f59e0b">${formatNumber(v.saves)}</span>
           </div>
           <div class="metric-cell">
             <span class="metric-cell-label">Chia sẻ</span>
-            <span class="metric-cell-val">${formatNumber(v.shares)}</span>
+            <span class="metric-cell-val" style="color: #10b981">${formatNumber(v.shares)}</span>
           </div>
         </div>
         <div class="leader-card-footer">
@@ -473,89 +516,210 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // 6. PHÂN TÍCH TIÊU ĐỀ NỘI DUNG (CONTENT INSIGHTS)
-  function renderContentInsights(videos) {
-    const stopWords = new Set(['và', 'là', 'của', 'có', 'cho', 'được', 'với', 'trong', 'này', 'các', 'một', 'khi', 'thì', 'ở', 'đã', 'video', 'tiktok', 'trending', 'xuhuong', 'fyp']);
-    const wordStats = new Map();
+  // 6. BẢNG TỔNG HỢP TỪ KHÓA TÌM KIẾM TRÊN CÁC BÀI VIẾT (SEARCH QUERIES & SEO INSIGHTS)
+  function renderSearchQueriesTable(videos) {
+    if (!searchQueriesTableBody) return;
+    searchQueriesTableBody.innerHTML = '';
+    const queryMap = new Map();
+
+    const avgChannelViews = currentDataset.summary ? currentDataset.summary.avgViews : 10000;
 
     videos.forEach(v => {
-      if (!v.title) return;
-      // Tách từ đơn giản
-      const words = v.title
+      const queries = new Set();
+      // 1. Thêm từ v.searchQueries đã bóc tách
+      if (Array.isArray(v.searchQueries)) {
+        v.searchQueries.forEach(q => {
+          const cleanQ = String(q).trim();
+          if (cleanQ.length >= 2) queries.add(cleanQ);
+        });
+      }
+      // 2. Thêm hashtag từ tiêu đề nếu có
+      const titleTags = (v.title || '').match(/#[\p{L}\p{N}_]+/gu) || [];
+      titleTags.forEach(t => queries.add(t.trim()));
+
+      // 3. Trích xuất các cụm từ nổi bật trong caption (không phải stopword)
+      const stopWords = new Set(['và', 'là', 'của', 'có', 'cho', 'được', 'với', 'trong', 'này', 'các', 'một', 'khi', 'thì', 'ở', 'đã', 'video', 'tiktok', 'trending', 'xuhuong', 'fyp']);
+      const words = (v.title || '')
         .toLowerCase()
         .replace(/[#@.,/#!$%^&*;:{}=\-_`~()?"']/g, ' ')
         .split(/\s+/)
-        .filter(w => w.length > 2 && !stopWords.has(w));
+        .filter(w => w.length >= 3 && !stopWords.has(w));
 
-      // Loại bỏ từ trùng trong 1 tiêu đề
-      const uniqueWords = new Set(words);
-      uniqueWords.forEach(w => {
-        if (!wordStats.has(w)) {
-          wordStats.set(w, { count: 0, totalViews: 0, totalEr: 0 });
+      // Gom cụm 2 từ (ví dụ "cách làm", "xây kênh")
+      for (let i = 0; i < words.length - 1; i++) {
+        const phrase = `${words[i]} ${words[i + 1]}`;
+        if (phrase.length >= 6) queries.add(phrase);
+      }
+      words.forEach(w => {
+        if (w.length >= 4) queries.add(w);
+      });
+
+      // Gom vào queryMap
+      queries.forEach(q => {
+        const key = q.toLowerCase();
+        if (!queryMap.has(key)) {
+          queryMap.set(key, {
+            displayQuery: q,
+            count: 0,
+            totalViews: 0,
+            totalEr: 0,
+            videoIds: []
+          });
         }
-        const item = wordStats.get(w);
+        const item = queryMap.get(key);
         item.count += 1;
         item.totalViews += v.views;
         item.totalEr += v.er;
+        item.videoIds.push(v.id);
       });
     });
 
-    // Lọc các từ xuất hiện ít nhất 2 lần và sắp xếp theo lượt view trung bình
-    const sortedWords = Array.from(wordStats.entries())
-      .map(([word, stat]) => ({
-        word,
-        count: stat.count,
-        avgViews: Math.round(stat.totalViews / stat.count),
-        avgEr: Number((stat.totalEr / stat.count).toFixed(2))
+    const list = Array.from(queryMap.values())
+      .map(item => ({
+        query: item.displayQuery,
+        count: item.count,
+        totalViews: item.totalViews,
+        avgViews: Math.round(item.totalViews / item.count),
+        avgEr: Number((item.totalEr / item.count).toFixed(2)),
+        videoIds: item.videoIds
       }))
-      .filter(item => item.count >= 2)
-      .sort((a, b) => b.avgViews - a.avgViews)
-      .slice(0, 8); // Top 8 từ khóa
+      .filter(item => item.count >= 1)
+      .sort((a, b) => b.totalViews - a.totalViews)
+      .slice(0, 15); // Top 15 từ khóa tìm kiếm nổi bật
 
-    keywordsTableBody.innerHTML = '';
-    if (sortedWords.length === 0) {
-      keywordsTableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: #64748b;">Chưa đủ mẫu tiêu đề để phân tích từ khóa.</td></tr>`;
+    if (queriesTotalCount) {
+      queriesTotalCount.textContent = `${list.length} từ khóa SEO`;
+    }
+
+    if (list.length === 0) {
+      searchQueriesTableBody.innerHTML = `<tr><td colspan="8" style="text-align:center; color: #64748b; padding: 24px;">Chưa tìm thấy từ khóa tìm kiếm nào trên các bài viết.</td></tr>`;
       return;
     }
 
-    sortedWords.forEach(item => {
-      let rating = '⭐ Tốt';
-      if (item.avgViews > (currentDataset.summary.avgViews * 1.5)) rating = '🔥 Rất cao';
-      else if (item.avgViews > currentDataset.summary.avgViews) rating = '🚀 Trên trung bình';
+    list.forEach((item, index) => {
+      let seoBadge = '<span class="viral-tag normal">📈 Ổn định</span>';
+      if (item.totalViews >= 100000 || item.avgViews >= avgChannelViews * 1.8) {
+        seoBadge = '<span class="viral-tag super-viral">🚀 Siêu Xu Hướng</span>';
+      } else if (item.avgViews >= avgChannelViews * 1.2 || item.count >= 2) {
+        seoBadge = '<span class="viral-tag trending">🔥 Tiềm Năng Cao</span>';
+      }
+
+      const isHashtag = item.query.startsWith('#');
+      const queryDisplay = isHashtag
+        ? `<span style="color: #25F4EE; font-weight: 700;">${escapeHtml(item.query)}</span>`
+        : `<span style="color: #fff; font-weight: 600;">🔍 ${escapeHtml(item.query)}</span>`;
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td><b style="color: #fff">"${escapeHtml(item.word)}"</b></td>
-        <td>${item.count} video</td>
-        <td style="color: #25F4EE; font-weight: 700;">${formatNumber(item.avgViews)}</td>
-        <td>${item.avgEr}%</td>
-        <td><span class="viral-tag ${rating.includes('Rất cao') ? 'super-viral' : 'trending'}">${rating}</span></td>
+        <td>${index + 1}</td>
+        <td>${queryDisplay}</td>
+        <td class="text-center"><span class="badge badge-scan" style="font-size: 11px;">${item.count} bài</span></td>
+        <td class="text-right" style="color: #25F4EE; font-weight: 700;">${formatNumber(item.totalViews)}</td>
+        <td class="text-right" style="font-weight: 600;">${formatNumber(item.avgViews)}</td>
+        <td class="text-center" style="font-weight: 700; color: #FE2C55;">${item.avgEr}%</td>
+        <td class="text-center">${seoBadge}</td>
+        <td class="text-center">
+          <button class="btn-filter-query" data-query="${escapeHtml(item.query)}" title="Lọc các bài viết chứa từ khóa này">
+            <span>🔍 Xem bài</span>
+          </button>
+        </td>
       `;
-      keywordsTableBody.appendChild(tr);
+      searchQueriesTableBody.appendChild(tr);
+    });
+
+    // Sự kiện bấm "Xem bài" để lọc ngay xuống bảng video
+    document.querySelectorAll('.btn-filter-query').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const q = btn.dataset.query;
+        tableSearchInput.value = q.replace(/^#/, '');
+        applyTableFilters();
+        document.querySelector('.datatable-section')?.scrollIntoView({ behavior: 'smooth' });
+      });
     });
   }
 
-  // 7. BẢNG DANH SÁCH CHI TIẾT TOÀN BỘ VIDEO
-  function renderFullTable(videos) {
-    fullVideosTableBody.innerHTML = '';
+  // 7. BỘ LỌC BÀI VIẾT THEO NGÀY & TÌM KIẾM
+  function getFilteredVideos() {
+    if (!currentDataset || !currentDataset.videos) return [];
     const query = (tableSearchInput.value || '').toLowerCase().trim();
+    const now = new Date();
 
-    const filtered = videos.filter(v => {
-      if (!query) return true;
-      return (v.title && v.title.toLowerCase().includes(query)) || (v.id && v.id.includes(query));
+    return currentDataset.videos.filter(v => {
+      // 1. Lọc theo search text (tiêu đề, ID, searchQueries)
+      if (query) {
+        const matchTitle = v.title && v.title.toLowerCase().includes(query);
+        const matchId = v.id && v.id.includes(query);
+        const matchTags = Array.isArray(v.searchQueries) && v.searchQueries.some(q => q.toLowerCase().includes(query));
+        if (!matchTitle && !matchId && !matchTags) return false;
+      }
+
+      // 2. Lọc theo ngày
+      const vTime = v.timestamp ? new Date(v.timestamp) : (v.publishDate ? new Date(v.publishDate.replace(/-/g, '/')) : null);
+      if (!vTime || isNaN(vTime.getTime())) return true;
+
+      if (dateFilterPreset === '7d') {
+        const cutoff = new Date(now.getTime() - 7 * 86400000);
+        if (vTime < cutoff) return false;
+      } else if (dateFilterPreset === '30d') {
+        const cutoff = new Date(now.getTime() - 30 * 86400000);
+        if (vTime < cutoff) return false;
+      } else if (dateFilterPreset === '90d') {
+        const cutoff = new Date(now.getTime() - 90 * 86400000);
+        if (vTime < cutoff) return false;
+      } else if (dateFilterPreset === 'this-month') {
+        if (vTime.getMonth() !== now.getMonth() || vTime.getFullYear() !== now.getFullYear()) return false;
+      }
+
+      // Custom range từ ô chọn ngày
+      if (dateFilterFrom) {
+        const fromDate = new Date(dateFilterFrom + 'T00:00:00');
+        if (vTime < fromDate) return false;
+      }
+      if (dateFilterTo) {
+        const toDate = new Date(dateFilterTo + 'T23:59:59');
+        if (vTime > toDate) return false;
+      }
+
+      return true;
     });
+  }
 
-    filtered.forEach((v, idx) => {
+  function applyTableFilters() {
+    const filtered = getFilteredVideos();
+    const totalCount = currentDataset && currentDataset.videos ? currentDataset.videos.length : 0;
+
+    if (filteredVideosCount) filteredVideosCount.textContent = formatNumber(filtered.length);
+    if (totalVideosCount) totalVideosCount.textContent = formatNumber(totalCount);
+
+    const isFiltered = (dateFilterPreset !== 'all' || dateFilterFrom || dateFilterTo || (tableSearchInput.value || '').trim() !== '');
+    if (activeFilterBadge) {
+      activeFilterBadge.style.display = isFiltered ? 'inline-block' : 'none';
+    }
+
+    renderFullTable(filtered);
+  }
+
+  // BẢNG DANH SÁCH CHI TIẾT TOÀN BỘ BÀI VIẾT
+  function renderFullTable(filteredList) {
+    fullVideosTableBody.innerHTML = '';
+    const list = filteredList || [];
+
+    if (list.length === 0) {
+      fullVideosTableBody.innerHTML = `<tr><td colspan="12" style="text-align:center; color: #64748b; padding: 24px;">Không tìm thấy bài viết nào phù hợp với bộ lọc ngày hoặc từ khóa tìm kiếm.</td></tr>`;
+      return;
+    }
+
+    list.forEach((v, idx) => {
       const isPhoto = v.type === 'photo';
       const typeBadge = isPhoto ? '<span class="type-mini-pill photo">📷 Ảnh</span>' : '<span class="type-mini-pill video">🎬 Video</span>';
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${idx + 1}</td>
-        <td style="max-width: 320px; font-weight: 500; color: #fff;">
+        <td style="max-width: 300px; font-weight: 500; color: #fff;">
           <div style="display: flex; align-items: center; gap: 8px;">
             ${typeBadge}
-            <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;" title="${escapeHtml(v.title)}">
+            <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px;" title="${escapeHtml(v.title)}">
               ${escapeHtml(v.title)}
             </div>
           </div>
@@ -564,6 +728,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         <td class="text-right" style="color: #25F4EE; font-weight: 700;">${formatNumber(v.views)}</td>
         <td class="text-right" style="color: #FE2C55;">${formatNumber(v.likes)}</td>
         <td class="text-right">${formatNumber(v.comments)}</td>
+        <td class="text-right" style="color: #a855f7;">${formatNumber(v.reposts || 0)}</td>
         <td class="text-right">${formatNumber(v.shares)}</td>
         <td class="text-right" style="color: #f59e0b;">${formatNumber(v.saves)}</td>
         <td class="text-center" style="font-weight: 700;">${v.er}%</td>
@@ -576,7 +741,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // 8. ĐỒNG BỘ LÊN GOOGLE SHEET (1-CLICK SYNC - APPEND ROWS)
+  // 8. ĐỒNG BỘ LÊN GOOGLE SHEET (1-CLICK SYNC - HỖ TRỢ XUẤT DỮ LIỆU ĐÃ LỌC)
   btnSyncSheets.addEventListener('click', async () => {
     let webhookUrl = '';
     try {
@@ -600,35 +765,37 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    if (!currentDataset || !currentDataset.videos || currentDataset.videos.length === 0) {
-      showToast('⚠️ Chưa có dữ liệu video để đồng bộ!', 'warning');
+    const videosToSync = getFilteredVideos();
+    if (!videosToSync || videosToSync.length === 0) {
+      showToast('⚠️ Không có bài viết nào trong bộ lọc để đồng bộ!', 'warning');
       return;
     }
 
     btnSyncSheets.disabled = true;
     btnSyncSheets.innerHTML = '<span class="btn-icon">⏳</span><span>Đang đồng bộ...</span>';
 
-    // Đóng gói mảng 15 cột chuẩn
+    // Đóng gói mảng 16 cột chuẩn (Bao gồm cả Lượt đăng lại)
     const scanTimeFormatted = formatDateDisplay(currentDataset.channel.scannedAt || new Date().toISOString());
     const channelUsername = currentDataset.channel.username || '@tiktok';
     const channelFollowers = currentDataset.channel.followers || 0;
 
-    const rows = currentDataset.videos.map(v => [
+    const rows = videosToSync.map(v => [
       scanTimeFormatted,                       // 1. Thời điểm quét
       channelUsername,                         // 2. Kênh TikTok
       channelFollowers,                        // 3. Tổng Follower
-      v.id,                                    // 4. ID Video
+      v.id,                                    // 4. ID Bài viết
       v.title,                                 // 5. Tiêu đề bài viết
       v.publishDate,                           // 6. Ngày đăng
       v.views,                                 // 7. Lượt xem
       v.likes,                                 // 8. Lượt tim
       v.comments,                              // 9. Lượt bình luận
-      v.shares,                                // 10. Lượt chia sẻ
-      v.saves,                                 // 11. Lượt lưu
-      `${v.er}%`,                              // 12. Tỷ lệ tương tác ER%
-      `${v.reachRatio}%`,                      // 13. Tỷ lệ View/Follower%
-      v.viralLabel,                            // 14. Đánh giá Viral
-      v.url                                    // 15. Link Video
+      v.reposts || 0,                          // 10. Lượt đăng lại
+      v.shares,                                // 11. Lượt chia sẻ
+      v.saves,                                 // 12. Lượt lưu
+      `${v.er}%`,                              // 13. Tỷ lệ tương tác ER%
+      `${v.reachRatio}%`,                      // 14. Tỷ lệ View/Follower%
+      v.viralLabel,                            // 15. Đánh giá Viral
+      v.url                                    // 16. Link Video
     ]);
 
     const payload = {
@@ -641,7 +808,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       btnSyncSheets.disabled = false;
       btnSyncSheets.innerHTML = '<span class="btn-icon">📊</span><span>Đồng bộ lên Google Sheet</span>';
       if (success) {
-        showToast(`✅ Đã đồng bộ thành công ${rows.length} dòng lên Google Sheet!`, 'success');
+        showToast(`✅ Đã đồng bộ thành công ${rows.length} bài lên Google Sheet!`, 'success');
       } else {
         showToast(`❌ Lỗi kết nối Google Sheet: ${msg || 'Kiểm tra lại Webhook'}`, 'danger');
       }
@@ -661,7 +828,6 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         });
       } else {
-        // Fallback gửi trực tiếp qua fetch
         const res = await fetch(webhookUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -675,13 +841,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // 9. XUẤT CSV CHO EXCEL
+  // 9. XUẤT CSV CHO EXCEL (HỖ TRỢ XUẤT DỮ LIỆU ĐÃ LỌC)
   btnExportCsv.addEventListener('click', () => {
-    if (!currentDataset || !currentDataset.videos) return;
+    const videosToExport = getFilteredVideos();
+    if (!videosToExport || videosToExport.length === 0) {
+      showToast('⚠️ Không có bài viết nào trong bộ lọc để xuất!', 'warning');
+      return;
+    }
 
     const headers = [
-      "Thời điểm quét", "Kênh TikTok", "Tổng Follower", "ID Video", "Tiêu đề bài viết",
-      "Ngày đăng", "Lượt xem", "Lượt tim", "Lượt bình luận", "Lượt chia sẻ", "Lượt lưu",
+      "Thời điểm quét", "Kênh TikTok", "Tổng Follower", "ID Bài viết", "Tiêu đề bài viết",
+      "Ngày đăng", "Lượt xem", "Lượt tim", "Lượt bình luận", "Lượt đăng lại", "Lượt chia sẻ", "Lượt lưu",
       "Tỷ lệ tương tác (%)", "Tỷ lệ View/Follower (%)", "Đánh giá Viral", "Link Video"
     ];
 
@@ -689,10 +859,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const channelUsername = currentDataset.channel.username || '@tiktok';
     const channelFollowers = currentDataset.channel.followers || 0;
 
-    let csvContent = '\uFEFF'; // BOM UTF-8 để mở tiếng Việt trên Excel không bị lỗi font
+    let csvContent = '\uFEFF'; // BOM UTF-8
     csvContent += headers.map(h => `"${h}"`).join(',') + '\n';
 
-    currentDataset.videos.forEach(v => {
+    videosToExport.forEach(v => {
       const row = [
         scanTimeFormatted,
         channelUsername,
@@ -703,6 +873,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         v.views,
         v.likes,
         v.comments,
+        v.reposts || 0,
         v.shares,
         v.saves,
         `${v.er}%`,
@@ -720,7 +891,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     a.download = `tiktok_analytics_${channelUsername.replace('@', '')}_${Date.now()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('💾 Đã xuất file CSV thành công!', 'success');
+    showToast(`💾 Đã xuất ${videosToExport.length} bài viết ra file CSV!`, 'success');
   });
 
   // 10. GÁN CÁC SỰ KIỆN ĐIỀU KHIỂN & BỘ LỌC
@@ -753,8 +924,58 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Ô tìm kiếm bảng
   tableSearchInput.addEventListener('input', () => {
-    renderFullTable(currentDataset.videos || []);
+    applyTableFilters();
   });
+
+  // Sự kiện các nút lọc ngày nhanh (7d, 30d, 90d, this-month, all)
+  document.querySelectorAll('.date-preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.date-preset-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      dateFilterPreset = btn.dataset.range;
+      // Reset custom inputs khi chọn preset
+      if (dateFromInput) dateFromInput.value = '';
+      if (dateToInput) dateToInput.value = '';
+      dateFilterFrom = '';
+      dateFilterTo = '';
+      applyTableFilters();
+    });
+  });
+
+  // Sự kiện chọn ngày tùy chỉnh
+  if (dateFromInput) {
+    dateFromInput.addEventListener('change', (e) => {
+      dateFilterFrom = e.target.value;
+      document.querySelectorAll('.date-preset-btn').forEach(b => b.classList.remove('active'));
+      dateFilterPreset = 'custom';
+      applyTableFilters();
+    });
+  }
+
+  if (dateToInput) {
+    dateToInput.addEventListener('change', (e) => {
+      dateFilterTo = e.target.value;
+      document.querySelectorAll('.date-preset-btn').forEach(b => b.classList.remove('active'));
+      dateFilterPreset = 'custom';
+      applyTableFilters();
+    });
+  }
+
+  // Sự kiện xóa bộ lọc ngày
+  if (btnClearDate) {
+    btnClearDate.addEventListener('click', () => {
+      document.querySelectorAll('.date-preset-btn').forEach(b => b.classList.remove('active'));
+      const allBtn = document.querySelector('.date-preset-btn[data-range="all"]');
+      if (allBtn) allBtn.classList.add('active');
+      dateFilterPreset = 'all';
+      if (dateFromInput) dateFromInput.value = '';
+      if (dateToInput) dateToInput.value = '';
+      dateFilterFrom = '';
+      dateFilterTo = '';
+      tableSearchInput.value = '';
+      applyTableFilters();
+    });
+  }
 
   // Modal Settings
   btnOpenSettings.addEventListener('click', openSettingsModal);
@@ -878,13 +1099,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       const comments = Math.round(views * (0.008 + Math.random() * 0.005));
       const shares = Math.round(views * (0.01 + Math.random() * 0.01));
       const saves = Math.round(views * (0.02 + Math.random() * 0.015));
-      const er = Number((((likes + comments + shares + saves) / views) * 100).toFixed(2));
+      const reposts = Math.round(views * (0.005 + Math.random() * 0.004));
+      const er = Number((((likes + comments + shares + saves + reposts) / views) * 100).toFixed(2));
       const title = titles[i % titles.length] + (i > 11 ? ` (Phần ${Math.floor(i/12) + 1})` : '');
 
       let viralLabel = '📊 Bình thường';
       let viralClass = 'normal';
-      if (isViral) { viralLabel = '🔥 Siêu Viral'; viralClass = 'super-viral'; }
-      else if (isTrending) { viralLabel = '🚀 Đang Xu hướng'; viralClass = 'trending'; }
+      if (views >= 100000 || isViral) { viralLabel = '🔥 Siêu Viral'; viralClass = 'super-viral'; }
+      else if (views >= 30000 || isTrending) { viralLabel = '🚀 Đang Xu hướng'; viralClass = 'trending'; }
       else if (er > 8) { viralLabel = '⭐ Tương tác cao'; viralClass = 'high-engagement'; }
 
       sampleVideos.push({
@@ -896,6 +1118,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         comments: comments,
         shares: shares,
         saves: saves,
+        reposts: reposts,
+        searchQueries: ['#xuhuong', '#tiktokviral', '#xaykenhtiktok', title.split(' ').slice(0, 3).join(' ')],
         er: er,
         reachRatio: Number(((views / 85000) * 100).toFixed(1)),
         viralScore: Number((factor * (1 + er/100)).toFixed(2)),

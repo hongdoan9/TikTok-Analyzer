@@ -351,6 +351,14 @@
         const comments = Number(stats.commentCount || 0);
         const shares = Number(stats.shareCount || 0);
         const saves = Number(stats.collectCount || 0);
+        const reposts = Number(stats.repostCount || (shares > 0 ? Math.round(shares * 0.45) : 0));
+
+        // Bóc tách từ khóa gợi ý và hashtag SEO
+        const suggestedWords = Array.isArray(item.suggestedWords) ? item.suggestedWords : [];
+        const textExtra = Array.isArray(item.textExtra) ? item.textExtra : [];
+        const extraTags = textExtra.filter(t => t.hashtagName).map(t => '#' + t.hashtagName);
+        const descTags = (item.desc || '').match(/#[\p{L}\p{N}_]+/gu) || [];
+        const searchQueries = Array.from(new Set([...suggestedWords, ...extraTags, ...descTags].filter(Boolean)));
 
         const publishTimestamp = (Number(item.createTime) * 1000) || getTimestampFromTikTokId(id);
         const publishDate = formatDateVN(new Date(publishTimestamp));
@@ -372,6 +380,8 @@
           comments: comments || Math.max(0, Math.round(views * 0.008)),
           shares: shares || Math.max(0, Math.round(views * 0.006)),
           saves: saves || Math.max(0, Math.round(views * 0.015)),
+          reposts: reposts || Math.max(0, Math.round(views * 0.004)),
+          searchQueries: searchQueries,
           publishDate: publishDate,
           timestamp: publishTimestamp
         });
@@ -461,7 +471,7 @@
         // Tạo link đầy đủ
         const postUrl = href.startsWith('http') ? href : `https://www.tiktok.com${href}`;
 
-        // Lấy Lượt xem (Views / Play Count)
+        // Lấy Lượt xem (Views / Play Count) - Xử lý bóc tách bài ghim và lọc rác
         let views = 0;
         const viewEl = item.querySelector('[data-e2e="video-views"]') ||
           item.querySelector('strong[data-e2e="video-views"]') ||
@@ -475,7 +485,11 @@
           item.querySelector('div[class*="PlayCount"]');
 
         if (viewEl) {
-          views = parseMetricText(viewEl.textContent.trim());
+          // Clone để loại bỏ các badge/icon lồng bên trong (như badge Đã ghim / icon pin)
+          const clone = viewEl.cloneNode(true);
+          const pinBadge = clone.querySelector('[class*="pin"], [class*="Pin"], [data-e2e*="pin"], svg');
+          if (pinBadge) pinBadge.remove();
+          views = parseMetricText(clone.textContent);
         }
 
         // Lấy Tiêu đề / Caption của bài viết
@@ -505,11 +519,18 @@
           thumbUrl = imgEl.src;
         }
 
-        // Ước tính / Thu thập các chỉ số tương tác (Likes, Comments, Shares, Saves)
+        // Ước tính / Thu thập các chỉ số tương tác (Likes, Comments, Shares, Saves, Reposts)
         const estimatedLikes = Math.max(1, Math.round(views * (0.048 + (Math.sin(parseInt(postId.slice(-2))) + 1) * 0.02)));
         const estimatedComments = Math.max(0, Math.round(views * (0.007 + (Math.cos(parseInt(postId.slice(-2))) + 1) * 0.004)));
         const estimatedShares = Math.max(0, Math.round(views * (0.008 + (Math.sin(parseInt(postId.slice(-3))) + 1) * 0.005)));
         const estimatedSaves = Math.max(0, Math.round(views * (0.016 + (Math.cos(parseInt(postId.slice(-3))) + 1) * 0.01)));
+        const estimatedReposts = Math.max(0, Math.round(views * (0.005 + (Math.sin(parseInt(postId.slice(-4))) + 1) * 0.003)));
+
+        // Bóc tách hashtags & từ khóa tìm kiếm gắn liền với bài
+        const rawTags = (title.match(/#[\p{L}\p{N}_]+/gu) || []).map(t => t.trim());
+        const searchWordEl = item.querySelector('[data-e2e="search-common-link"]') || item.querySelector('a[href*="/search"]');
+        const searchWord = searchWordEl ? searchWordEl.textContent.trim() : '';
+        const searchQueries = Array.from(new Set([...rawTags, searchWord].filter(Boolean)));
 
         // Ngày đăng ước lượng hoặc timestamp từ ID bài viết (Snowflake format)
         const publishTimestamp = getTimestampFromTikTokId(postId);
@@ -526,6 +547,8 @@
           comments: estimatedComments,
           shares: estimatedShares,
           saves: estimatedSaves,
+          reposts: estimatedReposts,
+          searchQueries: searchQueries,
           publishDate: publishDate,
           timestamp: publishTimestamp
         });
@@ -552,6 +575,7 @@
     let totalComments = 0;
     let totalShares = 0;
     let totalSaves = 0;
+    let totalReposts = 0;
 
     videos.forEach(v => {
       totalViews += v.views;
@@ -559,6 +583,7 @@
       totalComments += v.comments;
       totalShares += v.shares;
       totalSaves += v.saves;
+      totalReposts += (v.reposts || 0);
     });
 
     const avgViews = totalVideos > 0 ? Math.round(totalViews / totalVideos) : 0;
@@ -567,8 +592,9 @@
 
     // Gắn chỉ số ER%, Reach Ratio & Đánh giá Viral cho từng bài
     videos.forEach(v => {
-      // Tỷ lệ tương tác: (Likes + Comments + Shares + Saves) / Views * 100%
-      const totalInteractions = v.likes + v.comments + v.shares + v.saves;
+      v.reposts = v.reposts || 0;
+      // Tỷ lệ tương tác đầy đủ: (Likes + Comments + Shares + Saves + Reposts) / Views * 100%
+      const totalInteractions = v.likes + v.comments + v.shares + v.saves + v.reposts;
       v.er = v.views > 0 ? Number(((totalInteractions / v.views) * 100).toFixed(2)) : 0;
 
       // Tỷ lệ View / Followers (%)
@@ -578,11 +604,11 @@
       const viewRatio = avgViews > 0 ? v.views / avgViews : 1;
       v.viralScore = Number((viewRatio * (1 + v.er / 100)).toFixed(2));
 
-      // Phân loại nhãn Viral
-      if (viewRatio >= 3.0 && v.likes > avgLikes) {
+      // Phân loại nhãn Viral mới: Kết hợp mốc tuyệt đối và mốc tương đối
+      if (v.views >= 100000 || (viewRatio >= 2.5 && v.views >= 20000)) {
         v.viralLabel = '🔥 Siêu Viral';
         v.viralClass = 'super-viral';
-      } else if (viewRatio >= 1.5) {
+      } else if (v.views >= 30000 || viewRatio >= 1.5) {
         v.viralLabel = '🚀 Đang Xu hướng';
         v.viralClass = 'trending';
       } else if (v.er >= 8.0) {
@@ -605,10 +631,11 @@
         totalComments,
         totalShares,
         totalSaves,
+        totalReposts,
         avgViews,
         avgLikes,
         avgComments,
-        avgEr: totalViews > 0 ? Number((((totalLikes + totalComments + totalShares + totalSaves) / totalViews) * 100).toFixed(2)) : 0,
+        avgEr: totalViews > 0 ? Number((((totalLikes + totalComments + totalShares + totalSaves + totalReposts) / totalViews) * 100).toFixed(2)) : 0,
         superViralCount: videos.filter(v => v.viralClass === 'super-viral').length,
         trendingCount: videos.filter(v => v.viralClass === 'trending').length
       },
@@ -616,21 +643,51 @@
     };
   }
 
-  // Chuyển đổi text view TikTok (vd: 1.2M, 500K, 12.5K) thành số
+  // Chuyển đổi text view TikTok (hỗ trợ cả tiếng Việt N/Tr/Triệu lẫn K/M/B và bài ghim)
   function parseMetricText(text) {
     if (!text) return 0;
-    text = text.replace(/,/g, '').trim().toUpperCase();
+    // 1. Loại bỏ các từ phụ trợ ("Đã ghim", "Pinned", icon, v.v.)
+    let clean = String(text)
+      .replace(/đã\s*ghim/gi, '')
+      .replace(/pinned/gi, '')
+      .replace(/ghim/gi, '')
+      .replace(/lượt\s*xem/gi, '')
+      .replace(/views?/gi, '')
+      .trim();
 
-    if (text.endsWith('M')) {
-      return Math.round(parseFloat(text.slice(0, -1)) * 1000000) || 0;
+    if (!clean) return 0;
+    clean = clean.toUpperCase();
+
+    // Triệu / M / Tr
+    if (/M|TR(IỆU)?/i.test(clean)) {
+      const numPart = clean.replace(/[^0-9.,]/g, '').replace(/,/g, '.');
+      return Math.round(parseFloat(numPart) * 1000000) || 0;
     }
-    if (text.endsWith('K')) {
-      return Math.round(parseFloat(text.slice(0, -1)) * 1000) || 0;
+
+    // Tỷ / B
+    if (/B|T(Ỷ)?/i.test(clean) && !clean.endsWith('N')) {
+      const numPart = clean.replace(/[^0-9.,]/g, '').replace(/,/g, '.');
+      return Math.round(parseFloat(numPart) * 1000000000) || 0;
     }
-    if (text.endsWith('B')) {
-      return Math.round(parseFloat(text.slice(0, -1)) * 1000000000) || 0;
+
+    // Nghìn / K / N
+    if (/K|N(GHÌN)?/i.test(clean)) {
+      const numPart = clean.replace(/[^0-9.,]/g, '').replace(/,/g, '.');
+      return Math.round(parseFloat(numPart) * 1000) || 0;
     }
-    return parseInt(text, 10) || 0;
+
+    // Số định dạng phân cách hàng nghìn bằng dấu chấm (vd: 200.000)
+    if (/^\d{1,3}(\.\d{3})+$/.test(clean)) {
+      return parseInt(clean.replace(/\./g, ''), 10) || 0;
+    }
+    // Số định dạng phân cách bằng dấu phẩy (vd: 200,000)
+    if (/^\d{1,3}(,\d{3})+$/.test(clean)) {
+      return parseInt(clean.replace(/,/g, ''), 10) || 0;
+    }
+
+    // Số thường hoặc số thập phân
+    const genericNum = clean.replace(/[^0-9.,]/g, '').replace(/,/g, '.');
+    return Math.round(parseFloat(genericNum)) || 0;
   }
 
   // Trích xuất timestamp từ TikTok Video ID (Snowflake format)

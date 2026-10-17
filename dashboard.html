@@ -174,12 +174,13 @@
 
           <!-- Leaderboard Tabs -->
           <div class="tab-pill-group">
-            <button class="tab-pill active" data-tab="viral">🔥 Top 10 Siêu Viral</button>
-            <button class="tab-pill" data-tab="views">👁️ Top 10 Lượt Xem</button>
-            <button class="tab-pill" data-tab="likes">❤️ Top 10 Lượt Tim</button>
+            <button class="tab-pill active" data-tab="views">👁️ Top 10 Lượt Xem</button>
             <button class="tab-pill" data-tab="saves">🔖 Top 10 Lượt Lưu</button>
             <button class="tab-pill" data-tab="shares">↗️ Top 10 Chia Sẻ</button>
+            <button class="tab-pill" data-tab="reposts">🔁 Top 10 Đăng Lại</button>
             <button class="tab-pill" data-tab="comments">💬 Top 10 Bình Luận</button>
+            <button class="tab-pill" data-tab="likes">❤️ Top 10 Lượt Tim</button>
+            <button class="tab-pill" data-tab="viral">🔥 Top 10 Siêu Viral</button>
           </div>
         </div>
 
@@ -189,31 +190,37 @@
         </div>
       </section>
 
-      <!-- Section: Content & Title Insights -->
-      <section class="card content-insights-section">
+      <!-- Section: Search Queries & SEO Insights (Thay thế bảng Tiêu đề) -->
+      <section class="card search-queries-section">
         <div class="section-header">
           <div class="section-title-wrap">
-            <span class="section-icon">💡</span>
+            <span class="section-icon">🔍</span>
             <div>
-              <h2>Phân tích Nội dung & Tiêu đề bài viết</h2>
-              <p class="section-desc">Khám phá các cụm từ trong tiêu đề mang lại lượt xem và tương tác cao nhất</p>
+              <h2>Bảng Tổng Hợp Từ Khóa Tìm Kiếm Trên Các Bài Viết</h2>
+              <p class="section-desc">Rà soát toàn bộ các cụm từ tìm kiếm, thẻ tag xu hướng và từ khóa SEO xuất hiện trên bài viết của kênh</p>
             </div>
+          </div>
+          <div class="search-queries-badge-wrap">
+            <span id="queries-total-count" class="badge badge-scan">0 từ khóa tìm kiếm</span>
           </div>
         </div>
 
         <div class="insights-container">
           <div class="keywords-table-wrapper">
-            <table class="styled-table">
+            <table class="styled-table search-queries-table">
               <thead>
                 <tr>
-                  <th>Cụm từ / Từ khóa tiêu đề</th>
-                  <th>Số video sử dụng</th>
-                  <th>Lượt xem trung bình</th>
-                  <th>Tương tác (ER%)</th>
-                  <th>Hiệu quả đánh giá</th>
+                  <th>#</th>
+                  <th>Cụm từ / Từ khóa tìm kiếm</th>
+                  <th class="text-center">Số bài xuất hiện</th>
+                  <th class="text-right">Tổng lượt xem</th>
+                  <th class="text-right">Lượt xem TB / bài</th>
+                  <th class="text-center">Tương tác TB (ER%)</th>
+                  <th class="text-center">Đánh giá tiềm năng SEO</th>
+                  <th class="text-center">Hành động</th>
                 </tr>
               </thead>
-              <tbody id="keywords-table-body">
+              <tbody id="search-queries-table-body">
                 <!-- Injected via JS -->
               </tbody>
             </table>
@@ -221,19 +228,48 @@
         </div>
       </section>
 
-      <!-- Section: Full Data Table with Search -->
+      <!-- Section: Full Data Table with Search & Date Filters -->
       <section class="card datatable-section">
         <div class="section-header">
           <div class="section-title-wrap">
             <span class="section-icon">📋</span>
             <div>
-              <h2>Danh sách toàn bộ Video đã quét</h2>
-              <p class="section-desc">Dữ liệu thô sẵn sàng đẩy lên Google Sheet</p>
+              <h2>Danh sách toàn bộ Bài viết đã quét</h2>
+              <p class="section-desc">Dữ liệu chi tiết kèm bộ lọc ngày và xuất dữ liệu</p>
             </div>
           </div>
+        </div>
 
+        <!-- Table Toolbar: Search + Quick Date Presets + Custom Date Range -->
+        <div class="table-toolbar-container">
           <div class="table-search-box">
-            <input type="text" id="table-search-input" placeholder="🔍 Tìm theo tiêu đề hoặc ID..." class="styled-input">
+            <input type="text" id="table-search-input" placeholder="🔍 Tìm theo tiêu đề, ID, hashtag..." class="styled-input">
+          </div>
+
+          <div class="date-filter-group">
+            <div class="date-quick-presets">
+              <button class="date-preset-btn active" data-range="all">Tất cả</button>
+              <button class="date-preset-btn" data-range="7d">7 ngày qua</button>
+              <button class="date-preset-btn" data-range="30d">30 ngày qua</button>
+              <button class="date-preset-btn" data-range="90d">90 ngày qua</button>
+              <button class="date-preset-btn" data-range="this-month">Tháng này</button>
+            </div>
+
+            <div class="custom-date-picker">
+              <span class="date-picker-label">Từ:</span>
+              <input type="date" id="date-from" class="styled-date-input">
+              <span class="date-picker-label">Đến:</span>
+              <input type="date" id="date-to" class="styled-date-input">
+              <button id="btn-clear-date" class="btn-clear-date" title="Xóa bộ lọc ngày">✕ Đặt lại</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filter Counter Status -->
+        <div class="table-filter-stats-bar">
+          <div class="stats-count-text">
+            <span>Đang hiển thị: <b id="filtered-videos-count">0</b> / <span id="total-videos-count">0</span> bài viết</span>
+            <span id="active-filter-badge" class="filter-active-tag" style="display: none;">Đang lọc theo thời gian</span>
           </div>
         </div>
 
@@ -242,11 +278,12 @@
             <thead>
               <tr>
                 <th>#</th>
-                <th>Tiêu đề video</th>
+                <th>Tiêu đề bài viết</th>
                 <th>Ngày đăng</th>
                 <th class="text-right">Lượt xem</th>
                 <th class="text-right">Tim</th>
                 <th class="text-right">Bình luận</th>
+                <th class="text-right">Đăng lại</th>
                 <th class="text-right">Chia sẻ</th>
                 <th class="text-right">Lượt lưu</th>
                 <th class="text-center">ER%</th>
