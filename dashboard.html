@@ -167,8 +167,8 @@
           <div class="section-title-wrap">
             <span class="section-icon">🏆</span>
             <div>
-              <h2>Bảng vàng Top 10 Video</h2>
-              <p class="section-desc">Tối đa 10 video xuất sắc nhất được phân loại theo các tiêu chí quan trọng</p>
+              <h2>Bảng vàng Top 10 Bài viết (Video & Ảnh)</h2>
+              <p class="section-desc">Tối đa 10 bài viết xuất sắc nhất được phân loại theo các tiêu chí quan trọng</p>
             </div>
           </div>
 
@@ -234,13 +234,13 @@
           <div class="section-title-wrap">
             <span class="section-icon">📋</span>
             <div>
-              <h2>Danh sách toàn bộ Bài viết đã quét</h2>
-              <p class="section-desc">Dữ liệu chi tiết kèm bộ lọc ngày và xuất dữ liệu</p>
+              <h2>Danh sách toàn bộ Bài viết đã quét (Video & Ảnh)</h2>
+              <p class="section-desc">Toàn bộ 100% bài viết (cả Video và Bài ảnh) trên kênh kèm bộ lọc và xuất dữ liệu</p>
             </div>
           </div>
         </div>
 
-        <!-- Table Toolbar: Search + Sort + Quick Date Presets + Custom Date Range -->
+        <!-- Table Toolbar: Search + Sort + Type Filter + Quick Date Presets + Custom Date Range -->
         <div class="table-toolbar-container">
           <div class="table-search-box">
             <input type="text" id="table-search-input" placeholder="🔍 Tìm theo tiêu đề, ID, hashtag..." class="styled-input">
@@ -254,6 +254,14 @@
               <option value="date-asc">Ngày đăng: Cũ nhất</option>
               <option value="likes-desc">❤️ Lượt tim nhiều nhất</option>
               <option value="reposts-desc">🔁 Đăng lại nhiều nhất</option>
+            </select>
+          </div>
+
+          <div class="table-type-box">
+            <select id="table-type-select" class="styled-select" title="Lọc theo định dạng bài viết">
+              <option value="all" selected>📁 Tất cả (Video & Ảnh)</option>
+              <option value="video">🎬 Chỉ Video</option>
+              <option value="photo">📷 Chỉ Bài ảnh</option>
             </select>
           </div>
 

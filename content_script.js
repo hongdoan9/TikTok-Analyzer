@@ -454,9 +454,9 @@
 
   // Bóc tách danh sách bài viết từ DOM hiện tại (Hỗ trợ 100% CẢ DẠNG ẢNH VÀ DẠNG VIDEO)
   function extractVideosFromDOM(channelStats) {
-    // 1. Quét tất cả thẻ bài viết hoặc thẻ liên kết chứa link bài viết
+    // 1. Quét tất cả thẻ bài viết hoặc thẻ liên kết chứa link bài viết (Cả Video và Bài ảnh)
     const postItems = document.querySelectorAll(
-      '[data-e2e="user-post-item"], div[class*="DivItemContainer"], div[class*="ItemContainer"], div[class*="DivContainer"], a[href*="/video/"], a[href*="/photo/"]'
+      'div[data-e2e="user-post-item-list"] > div, [data-e2e="user-post-item"], div[class*="DivItemContainer"], div[class*="ItemContainer"], div[class*="DivContainer"], a[href*="/video/"], a[href*="/photo/"]'
     );
 
     postItems.forEach(item => {
@@ -474,8 +474,10 @@
         if (!linkEl) return;
 
         const href = linkEl.getAttribute('href') || '';
-        // Bắt được cả ID của dạng photo (ảnh) và video
-        const idMatch = href.match(/(?:video|photo)\/(\d+)/);
+        // Bắt được cả ID của dạng photo (ảnh) và video hoặc bất kỳ định dạng post ID nào
+        const idMatch = href.match(/(?:video|photo|post|item|note)\/(\d+)/) ||
+                        href.match(/\/(\d{15,22})/) ||
+                        href.match(/[?&](?:modal_id|item_id)=(\d+)/);
         if (!idMatch) return;
 
         const postId = idMatch[1];

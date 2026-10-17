@@ -48,6 +48,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Date Filter & Sort Elements
   const tableSortSelect = document.getElementById('table-sort-select');
+  const tableTypeSelect = document.getElementById('table-type-select');
   const filteredVideosCount = document.getElementById('filtered-videos-count');
   const totalVideosCount = document.getElementById('total-videos-count');
   const activeFilterBadge = document.getElementById('active-filter-badge');
@@ -652,7 +653,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const sortMode = (tableSortSelect ? tableSortSelect.value : 'views-desc');
 
     let list = currentDataset.videos.filter(v => {
-      // 1. Lọc theo search text (tiêu đề, ID, searchQueries)
+      // 1. Lọc theo định dạng bài viết (Tất cả / Chỉ Video / Chỉ Bài ảnh)
+      const selectedType = tableTypeSelect ? tableTypeSelect.value : 'all';
+      if (selectedType === 'video' && v.type !== 'video') return false;
+      if (selectedType === 'photo' && v.type !== 'photo') return false;
+
+      // 2. Lọc theo search text (tiêu đề, ID, searchQueries)
       if (query) {
         const matchTitle = v.title && v.title.toLowerCase().includes(query);
         const matchId = v.id && v.id.includes(query);
@@ -660,7 +666,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!matchTitle && !matchId && !matchTags) return false;
       }
 
-      // 2. Lọc theo ngày
+      // 3. Lọc theo ngày
       const vTime = v.timestamp ? new Date(v.timestamp) : (v.publishDate ? new Date(v.publishDate.replace(/-/g, '/')) : null);
       if (!vTime || isNaN(vTime.getTime())) return true;
 
@@ -715,7 +721,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (filteredVideosCount) filteredVideosCount.textContent = formatNumber(filtered.length);
     if (totalVideosCount) totalVideosCount.textContent = formatNumber(totalCount);
 
-    const isFiltered = (dateFilterPreset !== 'all' || dateFilterFrom || dateFilterTo || (tableSearchInput.value || '').trim() !== '');
+    const isFiltered = (dateFilterPreset !== 'all' || dateFilterFrom || dateFilterTo || (tableSearchInput.value || '').trim() !== '' || (tableTypeSelect && tableTypeSelect.value !== 'all'));
     if (activeFilterBadge) {
       activeFilterBadge.style.display = isFiltered ? 'inline-block' : 'none';
     }
@@ -997,6 +1003,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       dateFilterFrom = '';
       dateFilterTo = '';
       tableSearchInput.value = '';
+      if (tableTypeSelect) tableTypeSelect.value = 'all';
       applyTableFilters();
     });
   }
@@ -1004,6 +1011,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Sự kiện thay đổi tiêu chí sắp xếp (Views, Ngày, Tim...)
   if (tableSortSelect) {
     tableSortSelect.addEventListener('change', () => {
+      applyTableFilters();
+    });
+  }
+
+  // Sự kiện lọc theo loại bài (Tất cả / Chỉ Video / Chỉ Bài ảnh)
+  if (tableTypeSelect) {
+    tableTypeSelect.addEventListener('change', () => {
       applyTableFilters();
     });
   }
