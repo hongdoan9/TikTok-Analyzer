@@ -696,6 +696,29 @@ body {
   box-shadow: 0 0 0 2px rgba(254, 44, 85, 0.2);
 }
 
+.styled-select {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid var(--border-color);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.styled-select:focus {
+  border-color: var(--tt-cyan);
+  box-shadow: 0 0 0 2px rgba(37, 244, 238, 0.2);
+}
+
+.styled-select option {
+  background: #0f172a;
+  color: #fff;
+}
+
 /* Nút bấm xem bài trong Bảng Từ Khóa Tìm Kiếm */
 .btn-filter-query {
   background: rgba(37, 244, 238, 0.12);

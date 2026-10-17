@@ -259,10 +259,12 @@
       countEl.textContent = `${scannedVideosMap.size} bài viết`;
     }
 
-    // 2. Tiến hành tự động cuộn trang và trích xuất DOM liên tục
+    // 2. Tiến hành tự động cuộn trang và trích xuất DOM liên tục cho tới khi lấy HẾT bài viết
     let noNewVideosCount = 0;
     let lastVideoCount = scannedVideosMap.size;
-    const maxRetries = 8; // Cho phép thử tối đa 8 lần cuộn để chống trễ mạng
+    const maxRetries = 20; // Thử tối đa 20 lần cuộn để bảo đảm không bị dừng sớm do mạng lag
+
+    const statusEl = document.querySelector('.tt-progress-status');
 
     while (!shouldStopScanning) {
       // Bóc tách toàn bộ các card bài viết (cả Video và Ảnh) đang hiển thị trên DOM
@@ -273,26 +275,41 @@
 
       if (currentCount === lastVideoCount) {
         noNewVideosCount++;
-        // Thử cuộn lắc nhẹ để ép TikTok kích hoạt cơ chế nạp thêm (infinite scroll lazy-loading)
-        if (noNewVideosCount >= 2) {
-          window.scrollBy({ top: -200, behavior: 'smooth' });
-          await new Promise(r => setTimeout(r, 250));
-          window.scrollBy({ top: 900, behavior: 'smooth' });
+        if (statusEl) {
+          statusEl.textContent = `Đang đợi TikTok nạp thêm bài... (thử lần ${noNewVideosCount}/${maxRetries})`;
         }
+
+        // Cơ chế kích hoạt nạp trang (trigger infinite scroll):
+        // 1. Cuộn giật nhẹ lên trên 500px rồi cuộn thẳng xuống đáy
+        window.scrollBy({ top: -500, behavior: 'instant' });
+        await new Promise(r => setTimeout(r, 250));
+
+        const scrollTarget = document.scrollingElement || document.documentElement || document.body;
+        window.scrollTo({ top: scrollTarget.scrollHeight, behavior: 'instant' });
+
+        // 2. Phát sự kiện scroll và resize để đánh thức IntersectionObserver của TikTok
+        window.dispatchEvent(new Event('scroll'));
+        window.dispatchEvent(new Event('resize'));
+
         if (noNewVideosCount >= maxRetries) {
-          console.log('[TikTok Analytics] Đã quét đến bài viết cuối cùng của kênh.');
+          console.log('[TikTok Analytics] Đã quét toàn bộ bài viết của kênh.');
           break;
         }
       } else {
         noNewVideosCount = 0;
         lastVideoCount = currentCount;
+        if (statusEl) {
+          statusEl.textContent = `Đã quét được ${currentCount} bài, đang nạp tiếp...`;
+        }
       }
 
-      // Cuộn xuống tiếp
-      window.scrollBy({ top: 900, behavior: 'smooth' });
+      // Cuộn thẳng xuống đáy trang
+      const scrollTarget = document.scrollingElement || document.documentElement || document.body;
+      window.scrollTo({ top: scrollTarget.scrollHeight, behavior: 'smooth' });
+      window.dispatchEvent(new Event('scroll'));
 
-      // Đợi TikTok render thêm bài viết (nhịp độ 650 - 1050ms)
-      const delay = Math.floor(Math.random() * 400) + 650;
+      // Đợi TikTok gửi API và render (nhịp độ 900 - 1400ms an toàn)
+      const delay = Math.floor(Math.random() * 500) + 950;
       await new Promise(r => setTimeout(r, delay));
     }
 
@@ -439,7 +456,7 @@
   function extractVideosFromDOM(channelStats) {
     // 1. Quét tất cả thẻ bài viết hoặc thẻ liên kết chứa link bài viết
     const postItems = document.querySelectorAll(
-      '[data-e2e="user-post-item"], [data-e2e="user-post-item-list"] > div, div[class*="DivItemContainer"], div[class*="DivContainer"], a[href*="/video/"], a[href*="/photo/"]'
+      '[data-e2e="user-post-item"], div[class*="DivItemContainer"], div[class*="ItemContainer"], div[class*="DivContainer"], a[href*="/video/"], a[href*="/photo/"]'
     );
 
     postItems.forEach(item => {
@@ -462,34 +479,63 @@
         if (!idMatch) return;
 
         const postId = idMatch[1];
-        if (scannedVideosMap.has(postId)) return; // Đã quét bài này
 
-        // Nhận diện dạng bài viết
-        const isPhoto = href.includes('/photo/') || !!item.querySelector('[data-e2e="photo-icon"], svg[class*="Photo"], div[class*="PhotoIcon"]');
-        const postType = isPhoto ? 'photo' : 'video';
+        // Tìm thẻ bao quanh bài viết (Card Container)
+        const card = linkEl.closest('[data-e2e="user-post-item"]') ||
+                     linkEl.closest('div[class*="DivItemContainer"]') ||
+                     linkEl.closest('div[class*="ItemContainer"]') ||
+                     linkEl.closest('div[class*="DivContainer"]') ||
+                     linkEl.parentElement?.parentElement ||
+                     item;
 
-        // Tạo link đầy đủ
-        const postUrl = href.startsWith('http') ? href : `https://www.tiktok.com${href}`;
-
-        // Lấy Lượt xem (Views / Play Count) - Xử lý bóc tách bài ghim và lọc rác
+        // Lấy Lượt xem (Views / Play Count) - Tìm trong cả card lẫn linkEl
         let views = 0;
-        const viewEl = item.querySelector('[data-e2e="video-views"]') ||
-          item.querySelector('strong[data-e2e="video-views"]') ||
-          item.querySelector('[data-e2e="play-count"]') ||
-          item.querySelector('strong[class*="StrongVideoCount"]') ||
-          item.querySelector('span[class*="SpanPlayCount"]') ||
-          item.querySelector('div[class*="DivCardFooter"] span') ||
-          item.querySelector('div[class*="CardFooter"] span') ||
-          item.querySelector('span[class*="PlayCount"]') ||
-          item.querySelector('div[class*="PlayCount"] span') ||
-          item.querySelector('div[class*="PlayCount"]');
+        const viewEl = card.querySelector('[data-e2e="video-views"]') ||
+          card.querySelector('strong[data-e2e="video-views"]') ||
+          card.querySelector('[data-e2e="play-count"]') ||
+          card.querySelector('strong[class*="StrongVideoCount"]') ||
+          card.querySelector('span[class*="SpanPlayCount"]') ||
+          card.querySelector('div[class*="DivCardFooter"] span') ||
+          card.querySelector('div[class*="CardFooter"] span') ||
+          card.querySelector('span[class*="PlayCount"]') ||
+          card.querySelector('div[class*="PlayCount"] span') ||
+          card.querySelector('div[class*="PlayCount"]') ||
+          linkEl.querySelector('[data-e2e="video-views"]') ||
+          linkEl.querySelector('[data-e2e="play-count"]');
 
         if (viewEl) {
-          // Clone để loại bỏ các badge/icon lồng bên trong (như badge Đã ghim / icon pin)
           const clone = viewEl.cloneNode(true);
           const pinBadge = clone.querySelector('[class*="pin"], [class*="Pin"], [data-e2e*="pin"], svg');
           if (pinBadge) pinBadge.remove();
           views = parseMetricText(clone.textContent);
+        }
+
+        // Fallback: nếu chưa lấy được view, quét các phần tử ngắn (span/strong) trong card để tìm số view
+        if (views === 0) {
+          const subElements = card.querySelectorAll('span, strong, div, p');
+          for (const el of subElements) {
+            const txt = el.textContent.trim();
+            if (txt.length > 0 && txt.length <= 15) {
+              const parsed = parseMetricText(txt);
+              if (parsed > views) {
+                views = parsed;
+              }
+            }
+          }
+        }
+
+        // Nếu bài viết đã quét: cập nhật lại view nếu trước đó view bị 0
+        if (scannedVideosMap.has(postId)) {
+          const existing = scannedVideosMap.get(postId);
+          if (existing && existing.views === 0 && views > 0) {
+            existing.views = views;
+            existing.likes = Math.max(1, Math.round(views * 0.05));
+            existing.comments = Math.max(0, Math.round(views * 0.008));
+            existing.shares = Math.max(0, Math.round(views * 0.006));
+            existing.saves = Math.max(0, Math.round(views * 0.015));
+            existing.reposts = Math.max(0, Math.round(views * 0.004));
+          }
+          return;
         }
 
         // Lấy Tiêu đề / Caption của bài viết
@@ -562,8 +608,8 @@
   function finalizeDataset(channelStats) {
     const videos = Array.from(scannedVideosMap.values());
 
-    // Sắp xếp theo thời gian đăng (cũ nhất -> mới nhất để vẽ biểu đồ diễn biến)
-    videos.sort((a, b) => a.timestamp - b.timestamp);
+    // ƯU TIÊN SỐ 1: Sắp xếp toàn bộ bài viết theo LƯỢT XEM TỪ CAO ĐẾN THẤP
+    videos.sort((a, b) => b.views - a.views);
 
     // Tính tổng và trung bình toàn kênh
     const totalVideos = videos.length;

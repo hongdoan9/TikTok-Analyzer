@@ -46,7 +46,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const fullVideosTableBody = document.getElementById('full-videos-table-body');
   const tableSearchInput = document.getElementById('table-search-input');
 
-  // Date Filter Elements
+  // Date Filter & Sort Elements
+  const tableSortSelect = document.getElementById('table-sort-select');
   const filteredVideosCount = document.getElementById('filtered-videos-count');
   const totalVideosCount = document.getElementById('total-videos-count');
   const activeFilterBadge = document.getElementById('active-filter-badge');
@@ -158,13 +159,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!currentDataset || !currentDataset.videos) return [];
     let list = [...currentDataset.videos];
 
+    // Luôn sắp xếp biểu đồ theo trình tự thời gian đăng (cũ nhất -> mới nhất) để đường diễn biến chuẩn xác
+    list.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
     if (chartFilter === '30') {
       list = list.slice(-30);
     } else if (chartFilter === '60') {
       list = list.slice(-60);
     } else if (chartFilter === 'viral') {
-      list = list.filter(v => v.viralClass === 'super-viral' || v.viralClass === 'trending');
-      if (list.length === 0) list = currentDataset.videos.slice(-20);
+      list = list.filter(v => v.views >= 50000 || v.viralClass === 'super-viral' || v.viralClass === 'trending');
+      if (list.length === 0) {
+        list = [...currentDataset.videos].sort((a, b) => b.views - a.views).slice(0, 20).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      }
     }
 
     // Áp dụng zoom slider
@@ -643,8 +649,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!currentDataset || !currentDataset.videos) return [];
     const query = (tableSearchInput.value || '').toLowerCase().trim();
     const now = new Date();
+    const sortMode = (tableSortSelect ? tableSortSelect.value : 'views-desc');
 
-    return currentDataset.videos.filter(v => {
+    let list = currentDataset.videos.filter(v => {
       // 1. Lọc theo search text (tiêu đề, ID, searchQueries)
       if (query) {
         const matchTitle = v.title && v.title.toLowerCase().includes(query);
@@ -682,6 +689,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       return true;
     });
+
+    // ƯU TIÊN SỐ 1 THEO YÊU CẦU: MẶC ĐỊNH SẮP XẾP TOÀN BỘ THEO LƯỢT XEM TỪ CAO ĐẾN THẤP
+    if (sortMode === 'views-desc') {
+      list.sort((a, b) => b.views - a.views);
+    } else if (sortMode === 'views-asc') {
+      list.sort((a, b) => a.views - b.views);
+    } else if (sortMode === 'date-desc') {
+      list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    } else if (sortMode === 'date-asc') {
+      list.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    } else if (sortMode === 'likes-desc') {
+      list.sort((a, b) => b.likes - a.likes);
+    } else if (sortMode === 'reposts-desc') {
+      list.sort((a, b) => (b.reposts || 0) - (a.reposts || 0));
+    }
+
+    return list;
   }
 
   function applyTableFilters() {
@@ -973,6 +997,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       dateFilterFrom = '';
       dateFilterTo = '';
       tableSearchInput.value = '';
+      applyTableFilters();
+    });
+  }
+
+  // Sự kiện thay đổi tiêu chí sắp xếp (Views, Ngày, Tim...)
+  if (tableSortSelect) {
+    tableSortSelect.addEventListener('change', () => {
       applyTableFilters();
     });
   }

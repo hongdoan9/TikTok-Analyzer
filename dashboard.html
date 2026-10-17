@@ -240,10 +240,21 @@
           </div>
         </div>
 
-        <!-- Table Toolbar: Search + Quick Date Presets + Custom Date Range -->
+        <!-- Table Toolbar: Search + Sort + Quick Date Presets + Custom Date Range -->
         <div class="table-toolbar-container">
           <div class="table-search-box">
             <input type="text" id="table-search-input" placeholder="🔍 Tìm theo tiêu đề, ID, hashtag..." class="styled-input">
+          </div>
+
+          <div class="table-sort-box">
+            <select id="table-sort-select" class="styled-select" title="Tiêu chí sắp xếp bài viết">
+              <option value="views-desc" selected>🔥 Lượt xem: Cao nhất trước</option>
+              <option value="views-asc">Lượt xem: Thấp nhất trước</option>
+              <option value="date-desc">🕒 Ngày đăng: Mới nhất</option>
+              <option value="date-asc">Ngày đăng: Cũ nhất</option>
+              <option value="likes-desc">❤️ Lượt tim nhiều nhất</option>
+              <option value="reposts-desc">🔁 Đăng lại nhiều nhất</option>
+            </select>
           </div>
 
           <div class="date-filter-group">
